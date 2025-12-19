@@ -1,5 +1,24 @@
-from sqlalchemy import Column, Integer, String, Float, Date, Text
+from sqlalchemy import Column, Integer, Float, Date, Text
+from sqlalchemy.types import TypeDecorator
+import json
 from .db import Base
+
+class JsonEncodedList(TypeDecorator):
+    """Enables storing a list of strings as a JSON-encoded string in a TEXT field."""
+    impl = Text
+
+    def process_bind_param(self, value, dialect):
+        if value is not None:
+            return json.dumps(value)
+        return value
+
+    def process_result_value(self, value, dialect):
+        if value is not None:
+            try:
+                return json.loads(value)
+            except json.JSONDecodeError:
+                return [value] if isinstance(value, str) else []
+        return value
 
 class Weather(Base):
     __tablename__ = "weather"
@@ -27,6 +46,6 @@ class DailyState(Base):
     id = Column(Integer, primary_key=True, index=True)
     date = Column(Date, unique=True, index=True, nullable=False)
     mood = Column(Integer, nullable=True)
-    symptoms = Column(Text, nullable=True)
+    symptoms = Column(JsonEncodedList, nullable=True)
     notes = Column(Text, nullable=True)
     raw_json = Column(Text, nullable=True)

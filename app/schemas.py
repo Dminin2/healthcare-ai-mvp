@@ -1,6 +1,17 @@
 from pydantic import BaseModel, ConfigDict
 from datetime import date
-from typing import Optional
+from typing import Optional, List
+from enum import Enum
+
+# --- Enums ---
+class SymptomCode(str, Enum):
+    HEADACHE = "headache"
+    FATIGUE = "fatigue"
+    NAUSEA = "nausea"
+    FEVER = "fever"
+    SORE_THROAT = "sore_throat"
+    BODY_ACHE = "body_ache"
+    NONE = "none"
 
 # --- Base Schemas (for shared properties, NO date/id) ---
 class WeatherBase(BaseModel):
@@ -15,7 +26,7 @@ class HealthMetricsBase(BaseModel):
 
 class DailyStateBase(BaseModel):
     mood: Optional[int] = None
-    symptoms: Optional[str] = None
+    symptoms: Optional[List[SymptomCode]] = None
     notes: Optional[str] = None
 
 # --- Create Schemas (for POST /ingest, includes date) ---
