@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, and_
 from datetime import date, timedelta, datetime, timezone
 import json
 from typing import Dict, Any, List
@@ -17,19 +17,15 @@ def parse_and_save_metric(db: Session, metric: schemas.HealthMetric, summary: sc
     for item in metric.data:
         try:
             # Centralized date parsing
-            record_time_str = item.get("date") or item.get("sleepStart")
-            if not record_time_str:
-                summary.warnings.append(f"Missing date identifier in item for '{metric_name}': {item}")
-                summary.records_skipped += 1
-                continue
+            # For RHR and StepCount, 'date' is timestamp. For Sleep, 'sleepStart' is timestamp.
+            # Use 'date' if available, otherwise 'sleepStart' for error reporting context.
+            record_time_str_for_error = item.get("date") or item.get("sleepStart")
             
-            # Use the more lenient `parse` instead of `isoparse`
-            record_time = dateutil_parse(record_time_str)
-
             if metric_name == "resting_heart_rate":
+                record_time = dateutil_parse(item["date"])
                 value = schemas.to_float(item.get("qty"))
                 if value is None:
-                    summary.warnings.append(f"Could not parse 'qty' for resting_heart_rate at {record_time_str}")
+                    summary.warnings.append(f"Could not parse 'qty' for resting_heart_rate at {record_time_str_for_error}")
                     summary.records_skipped += 1
                     continue
                 
@@ -43,9 +39,10 @@ def parse_and_save_metric(db: Session, metric: schemas.HealthMetric, summary: sc
                 summary.records_inserted += 1
 
             elif metric_name == "step_count":
+                record_time = dateutil_parse(item["date"])
                 value = schemas.to_float(item.get("qty"))
                 if value is None:
-                    summary.warnings.append(f"Could not parse 'qty' for step_count at {record_time_str}")
+                    summary.warnings.append(f"Could not parse 'qty' for step_count at {record_time_str_for_error}")
                     summary.records_skipped += 1
                     continue
 
@@ -118,26 +115,67 @@ def process_and_save_health_metrics(db: Session, payload: schemas.HealthAutoExpo
     return summary
 
 
-def get_latest_health_summary(db: Session) -> schemas.LatestHealthSummary:
-    """Retrieves a summary of the latest health metrics."""
-    
-    # Latest Sleep
-    latest_sleep = db.query(models.SleepSession).order_by(models.SleepSession.session_end_time.desc()).first()
-    
-    # Latest Resting HR
-    latest_hr = db.query(models.RestingHeartRate).order_by(models.RestingHeartRate.timestamp.desc()).first()
-    
-    start_of_today_utc = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-    
-    total_steps_today = db.query(func.sum(models.StepCount.value)).filter(
-        models.StepCount.timestamp >= start_of_today_utc
-    ).scalar() or 0.0
+# --- Rewritten get_summary_last_n_days for integrated summary ---
 
-    return schemas.LatestHealthSummary(
-        latest_sleep=latest_sleep,
-        latest_resting_hr=latest_hr,
-        today_steps_total=total_steps_today
-    )
+def get_summary_last_n_days(db: Session, days: int = 7) -> List[schemas.SummaryData]:
+    end_date_utc = datetime.now(timezone.utc).date() # Today's date in UTC
+    
+    summary_list = []
+    for i in range(days):
+        current_date_utc = end_date_utc - timedelta(days=i)
+        
+        # Start and end of the current UTC day
+        start_of_current_day_utc = datetime(current_date_utc.year, current_date_utc.month, current_date_utc.day, tzinfo=timezone.utc)
+        end_of_current_day_utc = start_of_current_day_utc + timedelta(days=1)
+        
+        # --- Query Weather and DailyState ---
+        weather_record = db.query(models.Weather).filter(models.Weather.date == current_date_utc).first()
+        daily_state_record = db.query(models.DailyState).filter(models.DailyState.date == current_date_utc).first()
+        
+        # --- Aggregate Health Metrics ---
+        # 1. Steps: Sum for the current UTC day
+        total_steps = db.query(func.sum(models.StepCount.value)).filter(
+            and_(
+                models.StepCount.timestamp >= start_of_current_day_utc,
+                models.StepCount.timestamp < end_of_current_day_utc
+            )
+        ).scalar()
+
+        # 2. Resting HR: Average for the current UTC day
+        avg_resting_hr = db.query(func.avg(models.RestingHeartRate.value)).filter(
+            and_(
+                models.RestingHeartRate.timestamp >= start_of_current_day_utc,
+                models.RestingHeartRate.timestamp < end_of_current_day_utc
+            )
+        ).scalar()
+        if avg_resting_hr is not None:
+            avg_resting_hr = round(avg_resting_hr, 1) # Round to 1 decimal place
+
+        # 3. Sleep Hours: Sum for sessions ending on the current UTC day
+        total_sleep_hours = db.query(func.sum(models.SleepSession.total_sleep_hours)).filter(
+            and_(
+                func.date(models.SleepSession.session_end_time) == current_date_utc # Match end date with current_date_utc
+            )
+        ).scalar()
+        if total_sleep_hours is not None:
+            total_sleep_hours = round(total_sleep_hours, 2) # Round to 2 decimal places
+
+        health_metrics_summary = schemas.HealthMetricsSummary(
+            steps=int(total_steps) if total_steps is not None else None,
+            sleep_hours=total_sleep_hours,
+            resting_hr=avg_resting_hr
+        )
+
+        # --- Construct SummaryData ---
+        summary_entry = schemas.SummaryData(
+            date=current_date_utc,
+            weather=weather_record,
+            daily_state=daily_state_record,
+            health_metrics=health_metrics_summary if any([health_metrics_summary.steps, health_metrics_summary.sleep_hours, health_metrics_summary.resting_hr]) else None
+        )
+        summary_list.append(summary_entry)
+        
+    return summary_list
 
 
 # --- Existing CRUD Functions (Largely untouched for backward compatibility) ---
@@ -165,26 +203,3 @@ def upsert_daily_state(db: Session, daily_state: schemas.DailyStateCreate):
     db.commit()
     db.refresh(db_obj)
     return db_obj
-
-
-def get_summary_last_n_days(db: Session, days: int = 7):
-    today = date.today()
-    start_date = today - timedelta(days=days - 1)
-
-    weather_data = {w.date: w for w in db.query(models.Weather).filter(models.Weather.date >= start_date).all()}
-    health_metrics_data = {} 
-    daily_state_data = {s.date: s for s in db.query(models.DailyState).filter(models.DailyState.date >= start_date).all()}
-
-    summary_list = []
-    for i in range(days):
-        current_date = today - timedelta(days=i)
-        health_summary = schemas.HealthMetricsSummary()
-        summary_entry = schemas.SummaryData(
-            date=current_date,
-            weather=weather_data.get(current_date),
-            health_metrics=health_summary,
-            daily_state=daily_state_data.get(current_date)
-        )
-        summary_list.append(summary_entry)
-        
-    return summary_list

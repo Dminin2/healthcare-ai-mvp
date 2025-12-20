@@ -69,27 +69,6 @@ class IngestResponseSummary(BaseModel):
     records_skipped: int
     warnings: List[str] = []
 
-# 5. Schemas for the new GET /health_metrics/latest endpoint
-class LatestSleepSummary(BaseModel):
-    session_start_time: datetime
-    session_end_time: datetime
-    total_sleep_hours: float
-    deep_hours: Optional[float] = None
-    rem_hours: Optional[float] = None
-    
-    model_config = ConfigDict(from_attributes=True)
-
-class LatestRestingHeartRateSummary(BaseModel):
-    timestamp: datetime
-    value: int
-    
-    model_config = ConfigDict(from_attributes=True)
-    
-class LatestHealthSummary(BaseModel):
-    latest_sleep: Optional[LatestSleepSummary] = None
-    latest_resting_hr: Optional[LatestRestingHeartRateSummary] = None
-    today_steps_total: float
-
 # --- Schemas to be removed or replaced ---
 # The old HealthMetrics schemas are now obsolete for the ingest endpoint.
 # We keep them here commented out for reference but they are no longer used
@@ -113,7 +92,7 @@ class LatestHealthSummary(BaseModel):
 class HealthMetricsSummary(BaseModel):
     steps: Optional[int] = None
     sleep_hours: Optional[float] = None
-    resting_hr: Optional[int] = None
+    resting_hr: Optional[float] = None # Change from int to float for average
     model_config = ConfigDict(from_attributes=True)
 
 # We need to keep DailyState and Weather for the existing endpoints

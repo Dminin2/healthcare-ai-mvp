@@ -109,13 +109,21 @@ curl -X POST 'http://127.0.0.1:8000/ingest/health_metrics' \
 
 The API will respond with a JSON summary of the operation, e.g., `{"message":"Processing completed.","metrics_received":3,"records_inserted":3,"records_skipped":0,"warnings":[]}`.
 
-### Getting Latest Health Summary
+---
+**Note:** The `GET /health_metrics/latest` endpoint has been removed as part of a refactoring effort to consolidate summary APIs.
+---
 
-You can retrieve a summary of the most recent health data using the `GET /health_metrics/latest` endpoint.
+### Consolidated Summary API
+
+The `GET /summary/last7d` endpoint now provides an integrated summary of weather, daily state, and aggregated health metrics for the last 7 days.
+
+**`curl` Example:**
 
 ```bash
-curl -X GET 'http://127.0.0.1:8000/health_metrics/latest'
+curl -X GET 'http://127.0.0.1:8000/summary/last7d'
 ```
+
+The API will return a JSON array, with each object representing a day and containing aggregated data (or `null` if data is missing for a category).
 
 ## Testing
 
