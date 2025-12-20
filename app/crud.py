@@ -193,13 +193,139 @@ def upsert_weather(db: Session, weather: schemas.WeatherCreate):
     return db_obj
 
 def upsert_daily_state(db: Session, daily_state: schemas.DailyStateCreate):
+
     db_obj = db.query(models.DailyState).filter(models.DailyState.date == daily_state.date).first()
+
     if db_obj:
+
         for key, value in daily_state.model_dump().items():
+
             setattr(db_obj, key, value)
+
     else:
+
         db_obj = models.DailyState(**daily_state.model_dump())
+
     db.add(db_obj)
+
     db.commit()
+
     db.refresh(db_obj)
+
     return db_obj
+
+
+
+# --- NEW CRUD Functions for Analysis ---
+
+
+
+def get_weather_for_date_range(db: Session, start_date: date, end_date: date) -> List[models.Weather]:
+
+    """Fetches weather records for a given date range."""
+
+    return db.query(models.Weather).filter(
+
+        models.Weather.date.between(start_date, end_date)
+
+    ).order_by(models.Weather.date.asc()).all()
+
+
+
+def get_daily_states_for_date_range(db: Session, start_date: date, end_date: date) -> List[models.DailyState]:
+
+    """Fetches daily state records for a given date range."""
+
+    return db.query(models.DailyState).filter(
+
+        models.DailyState.date.between(start_date, end_date)
+
+    ).order_by(models.DailyState.date.asc()).all()
+
+
+
+def get_aggregated_health_metrics_for_date(db: Session, target_date: date) -> schemas.HealthMetricsSummary:
+
+    """Computes aggregated health metrics (steps, sleep, HR) for a single specific day."""
+
+    start_of_day_utc = datetime(target_date.year, target_date.month, target_date.day, tzinfo=timezone.utc)
+
+    end_of_day_utc = start_of_day_utc + timedelta(days=1)
+
+
+
+    # Sum steps for the day
+
+    total_steps = db.query(func.sum(models.StepCount.value)).filter(
+
+        models.StepCount.timestamp >= start_of_day_utc,
+
+        models.StepCount.timestamp < end_of_day_utc
+
+    ).scalar()
+
+
+
+    # Average resting HR for the day
+
+    avg_resting_hr = db.query(func.avg(models.RestingHeartRate.value)).filter(
+
+        models.RestingHeartRate.timestamp >= start_of_day_utc,
+
+        models.RestingHeartRate.timestamp < end_of_day_utc
+
+    ).scalar()
+
+    if avg_resting_hr is not None:
+
+        avg_resting_hr = round(avg_resting_hr, 1)
+
+
+
+    # Sum sleep for sessions ending on that day
+
+    total_sleep_hours = db.query(func.sum(models.SleepSession.total_sleep_hours)).filter(
+
+        func.date(models.SleepSession.session_end_time) == target_date
+
+    ).scalar()
+
+    if total_sleep_hours is not None:
+
+        total_sleep_hours = round(total_sleep_hours, 2)
+
+
+
+    return schemas.HealthMetricsSummary(
+
+        steps=int(total_steps) if total_steps is not None else None,
+
+        sleep_hours=total_sleep_hours,
+
+        resting_hr=avg_resting_hr
+
+    )
+
+
+
+def get_indicator_thresholds(db: Session) -> Dict[str, models.IndicatorThreshold]:
+
+    """Fetches all indicator thresholds and returns them as a dictionary keyed by name."""
+
+    thresholds = db.query(models.IndicatorThreshold).all()
+
+    return {t.indicator_name: t for t in thresholds}
+
+
+
+def upsert_indicator_threshold(db: Session, threshold_data: models.IndicatorThreshold) -> models.IndicatorThreshold:
+
+    """Updates an existing threshold or creates a new one."""
+
+    # This is a simple merge, more complex logic might be needed
+
+    merged_obj = db.merge(threshold_data)
+
+    db.flush() # Use flush instead of commit to keep the session open
+
+    return merged_obj

@@ -131,3 +131,25 @@ class SummaryData(BaseModel):
     weather: Optional[WeatherSummary] = None
     health_metrics: Optional[HealthMetricsSummary] = None
     daily_state: Optional[DailyStateSummary] = None
+
+
+# --- NEW Schemas for Analysis Endpoint ---
+
+class IndicatorResult(BaseModel):
+    name: str
+    label: str  # "ok", "caution", "danger"
+    value: Optional[float] = None
+    unit: Optional[str] = None
+    related_symptoms: List[str] = Field(default_factory=list)
+
+class AnalysisEvidence(BaseModel):
+    rules_triggered: List[str] = Field(default_factory=list)
+    missing_fields: List[str] = Field(default_factory=list)
+
+class AnalysisResult(BaseModel):
+    date: date
+    overall_level: str  # "ok", "caution", "danger"
+    total_points: int
+    indicators: List[IndicatorResult]
+    event_rates: Dict[str, Dict[str, Optional[float]]] = Field(default_factory=dict)
+    evidence: AnalysisEvidence = Field(default_factory=AnalysisEvidence)

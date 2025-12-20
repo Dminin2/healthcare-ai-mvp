@@ -84,9 +84,39 @@ class RestingHeartRate(Base):
     source = Column(String, nullable=True)
 
 class StepCount(Base):
+
     __tablename__ = "step_counts"
+
     id = Column(Integer, primary_key=True, index=True)
+
     timestamp = Column(DateTime(timezone=True), nullable=False, index=True)
+
     value = Column(Float, nullable=False)
+
     unit = Column(String, nullable=True)
+
     source = Column(String, nullable=True)
+
+
+
+
+
+class IndicatorThreshold(Base):
+
+    __tablename__ = "indicator_thresholds"
+
+    indicator_name = Column(String, primary_key=True, index=True)
+
+    caution_threshold = Column(Float, nullable=False)
+
+    danger_threshold = Column(Float, nullable=False)
+
+    # The following are for the auto-adjustment logic
+
+    false_alarm_count = Column(Integer, default=0, nullable=False)
+
+    event_at_ok_count = Column(Integer, default=0, nullable=False)
+
+    last_updated = Column(DateTime(timezone=True), nullable=False)
+
+    last_reset_date = Column(Date, nullable=True)
