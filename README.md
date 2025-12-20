@@ -32,7 +32,7 @@ This project provides an API to track correlations between daily health metrics,
 While the application is running, you can access the interactive API documentation (Swagger UI) at:
 *   `http://127.0.0.1:8000/docs`
 
-This interface allows you to explore and test all API endpoints.
+This interface allows you to explore and test all API endpoints. Note that all ingestion endpoints (`/ingest/weather`, `/ingest/daily_state`, `/ingest/health_metrics`) are now consolidated under a single "Ingestion" section for a streamlined view.
 
 ## Data Import Scripts
 
