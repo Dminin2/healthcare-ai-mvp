@@ -2,16 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException, Path
 from sqlalchemy.orm import Session
 from datetime import date
 
-from .. import schemas, db
+from .. import schemas
 from ..core import analysis_logic
-
-# Dependency to get the DB session, consistent with other routers
-def get_db():
-    database = db.SessionLocal()
-    try:
-        yield database
-    finally:
-        database.close()
+from ..dependencies import get_db
 
 router = APIRouter(
     prefix="/analysis",

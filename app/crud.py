@@ -320,12 +320,22 @@ def get_indicator_thresholds(db: Session) -> Dict[str, models.IndicatorThreshold
 
 def upsert_indicator_threshold(db: Session, threshold_data: models.IndicatorThreshold) -> models.IndicatorThreshold:
 
+
+
     """Updates an existing threshold or creates a new one."""
+
+
 
     # This is a simple merge, more complex logic might be needed
 
+
+
     merged_obj = db.merge(threshold_data)
 
-    db.flush() # Use flush instead of commit to keep the session open
+
+
+    db.commit() # Commit the changes here to ensure persistence
+
+
 
     return merged_obj

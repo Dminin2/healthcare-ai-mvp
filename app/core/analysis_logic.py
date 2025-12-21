@@ -89,9 +89,9 @@ def run_daily_analysis(db_session: Session, analysis_date: date) -> Optional[sch
     symptom_analysis = _analyze_symptom_correlation(full_historical_analysis, analysis_data)
     event_rates = _calculate_event_rates(full_historical_analysis)
     
-    # Adjust thresholds based on today's data. The session will be committed by the caller context.
+    # Adjust thresholds based on today's data.
     _adjust_thresholds(db_session, thresholds, full_historical_analysis, analysis_date)
-    # db_session.commit() # This should be handled by the dependency wrapper
+    db_session.commit() # Commit changes made by threshold adjustment and initialization
 
     today_analysis = full_historical_analysis.get(analysis_date)
     if not today_analysis:
@@ -134,12 +134,10 @@ def _initialize_thresholds(db: Session) -> Dict[str, models.IndicatorThreshold]:
                 indicator_name=name, caution_threshold=values["caution"],
                 danger_threshold=values["danger"], last_updated=datetime.now(timezone.utc)
             )
-            # Use the existing CRUD function which should handle the session state
-            crud.upsert_indicator_threshold(db, threshold_obj)
+            crud.upsert_indicator_threshold(db, threshold_obj) # This commits the individual upsert
             updated = True
     if updated:
-        # The session will be committed by the dependency context
-        db.flush()
+        db.commit() # Commit the new thresholds here if there were updates
     return crud.get_indicator_thresholds(db)
 
 def _normalize_data(weather, health, states) -> Dict[date, Dict[str, Any]]:

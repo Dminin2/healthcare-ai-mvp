@@ -1,28 +1,23 @@
 from fastapi import APIRouter, Depends, Body
 from sqlalchemy.orm import Session
-from .. import crud, schemas, db
 from typing import Any
+from .. import crud, schemas
+from ..dependencies import get_db
 
-router = APIRouter()
+router = APIRouter(
+    prefix="/ingest",
+    tags=["Ingestion"]
+)
 
-# Dependency to get the DB session
-def get_db():
-    database = db.SessionLocal()
-    try:
-        yield database
-    finally:
-        database.close()
-
-@router.post("/ingest/weather", response_model=schemas.Weather, tags=["Ingestion"])
+@router.post("/weather", response_model=schemas.Weather)
 def ingest_weather_data(weather: schemas.WeatherCreate, db: Session = Depends(get_db)):
     return crud.upsert_weather(db=db, weather=weather)
 
 import os
 
 @router.post(
-    "/ingest/health_metrics",
-    response_model=schemas.IngestResponseSummary,
-    tags=["Ingestion"]
+    "/health_metrics",
+    response_model=schemas.IngestResponseSummary
 )
 def ingest_health_metrics_data(
     payload: schemas.HealthAutoExportPayload,
@@ -39,6 +34,6 @@ def ingest_health_metrics_data(
         db.commit()
     return summary
 
-@router.post("/ingest/daily_state", response_model=schemas.DailyState, tags=["Ingestion"])
+@router.post("/daily_state", response_model=schemas.DailyState)
 def ingest_daily_state_data(daily_state: schemas.DailyStateCreate, db: Session = Depends(get_db)):
     return crud.upsert_daily_state(db=db, daily_state=daily_state)
