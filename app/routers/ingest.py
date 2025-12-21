@@ -13,19 +13,19 @@ def get_db():
     finally:
         database.close()
 
-@router.post("/weather", response_model=schemas.Weather, tags=["Ingestion"])
+@router.post("/ingest/weather", response_model=schemas.Weather, tags=["Ingestion"])
 def ingest_weather_data(weather: schemas.WeatherCreate, db: Session = Depends(get_db)):
     return crud.upsert_weather(db=db, weather=weather)
 
 import os
 
 @router.post(
-    "/health_metrics",
+    "/ingest/health_metrics",
     response_model=schemas.IngestResponseSummary,
     tags=["Ingestion"]
 )
 def ingest_health_metrics_data(
-    payload: schemas.HealthAutoExportPayload, 
+    payload: schemas.HealthAutoExportPayload,
     db: Session = Depends(get_db)
 ):
     """
@@ -39,6 +39,6 @@ def ingest_health_metrics_data(
         db.commit()
     return summary
 
-@router.post("/daily_state", response_model=schemas.DailyState, tags=["Ingestion"])
+@router.post("/ingest/daily_state", response_model=schemas.DailyState, tags=["Ingestion"])
 def ingest_daily_state_data(daily_state: schemas.DailyStateCreate, db: Session = Depends(get_db)):
     return crud.upsert_daily_state(db=db, daily_state=daily_state)
