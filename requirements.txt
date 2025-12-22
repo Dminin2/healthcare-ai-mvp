@@ -6,3 +6,5 @@ python-dateutil
 pytest
 httpx
 numpy
+google-genai
+python-dotenv

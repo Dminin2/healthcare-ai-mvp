@@ -36,11 +36,21 @@ def get_daily_advice(
         db_session=db_session,
         analysis_date=date
     )
-    
-    if not analysis_result or (analysis_result.evidence and "Core data for today or yesterday" in analysis_result.evidence.missing_fields):
+
+    # if not analysis_result or (analysis_result.evidence and "Core data for today or yesterday" in analysis_result.evidence.missing_fields):
+    #     raise HTTPException(
+    #         status_code=404,
+    #         detail="Insufficient data to perform analysis, so advice cannot be generated."
+    #     )
+
+    has_missing_data = False
+    if analysis_result and analysis_result.evidence:
+        has_missing_data = any("Core data" in field for field in analysis_result.evidence.missing_fields)
+
+    if not analysis_result or has_missing_data:
         raise HTTPException(
             status_code=404,
-            detail="Insufficient data to perform analysis, so advice cannot be generated."
+            detail="分析に必要なデータが不足しているため、アドバイスを生成できません。"
         )
 
     # 2. Convert the Pydantic model to a dictionary.

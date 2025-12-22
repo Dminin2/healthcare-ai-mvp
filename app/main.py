@@ -1,3 +1,6 @@
+import os
+from dotenv import load_dotenv
+load_dotenv()
 from fastapi import FastAPI
 from . import models
 from .db import engine
@@ -24,4 +27,3 @@ def create_app():
 
 # Removed: app = create_app() # For normal application startup.
 # This is now handled by uvicorn --factory option for production, and by conftest.py for testing.
-
