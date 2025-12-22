@@ -19,7 +19,7 @@ def fetch_weather_data(lat, lon, timezone):
         return response.json()
     except requests.exceptions.RequestException as e:
         print(f"Error fetching data from Open-Meteo: {e}", file=sys.stderr)
-        sys.exit(1)
+        raise RuntimeError(f"Error fetching data from Open-Meteo: {e}") from e
 
 def post_to_ingest_api(base_url, weather_payload):
     """Posts the formatted weather data to the local ingest API."""
@@ -32,7 +32,41 @@ def post_to_ingest_api(base_url, weather_payload):
     except requests.exceptions.RequestException as e:
         print(f"Error posting data to the ingest API at {ingest_url}: {e}", file=sys.stderr)
         print("Please ensure the FastAPI server is running.", file=sys.stderr)
-        sys.exit(1)
+        raise RuntimeError(f"Error posting data to ingest API at {ingest_url}: {e}") from e
+
+def import_weather_for_date(
+    target_date_str: str,
+    base_url: str = "http://127.0.0.1:8000",
+    lat: float = -37.81,
+    lon: float = 144.96,
+    timezone: str = "Australia/Melbourne",
+) -> dict:
+    """Fetch -> pick target date -> post to ingest. Returns the posted payload."""
+    # Validate date format
+    datetime.strptime(target_date_str, "%Y-%m-%d")
+
+    print(f"Fetching weather data for {target_date_str}...")
+    weather_data = fetch_weather_data(lat, lon, timezone)
+
+    if not weather_data or "daily" not in weather_data:
+        raise RuntimeError("Invalid or empty response from Open-Meteo API.")
+
+    daily_data = weather_data["daily"]
+    try:
+        date_index = daily_data["time"].index(target_date_str)
+    except ValueError as e:
+        raise RuntimeError(f"Date {target_date_str} not found in the API response.") from e
+
+    payload = {
+        "date": target_date_str,
+        "temp_max": daily_data["temperature_2m_max"][date_index],
+        "temp_min": daily_data["temperature_2m_min"][date_index],
+        "precipitation_sum": daily_data["precipitation_sum"][date_index],
+    }
+
+    print(f"Found data: {payload}")
+    post_to_ingest_api(base_url, payload)
+    return payload
 
 def main():
     """Main function to parse arguments, fetch data, and post it."""
@@ -42,7 +76,7 @@ def main():
     parser.add_argument("--lon", type=float, default=144.96, help="Longitude. Defaults to Melbourne.")
     parser.add_argument("--timezone", default="Australia/Melbourne", help="Timezone. Defaults to Australia/Melbourne.")
     parser.add_argument("--base-url", default="http://127.0.0.1:8000", help="Base URL of the healthcare-ai API.")
-    
+
     args = parser.parse_args()
 
     target_date_str = args.date
@@ -53,30 +87,43 @@ def main():
         print(f"Error: Date format must be YYYY-MM-DD. Received: {target_date_str}", file=sys.stderr)
         sys.exit(1)
 
-    print(f"Fetching weather data for {target_date_str}...")
-    weather_data = fetch_weather_data(args.lat, args.lon, args.timezone)
+    # print(f"Fetching weather data for {target_date_str}...")
+    # weather_data = fetch_weather_data(args.lat, args.lon, args.timezone)
 
-    if not weather_data or "daily" not in weather_data:
-        print("Error: Invalid or empty response from Open-Meteo API.", file=sys.stderr)
-        sys.exit(1)
+    # if not weather_data or "daily" not in weather_data:
+    #     print("Error: Invalid or empty response from Open-Meteo API.", file=sys.stderr)
+    #     sys.exit(1)
 
-    daily_data = weather_data["daily"]
+    # daily_data = weather_data["daily"]
+    # try:
+    #     date_index = daily_data["time"].index(target_date_str)
+    # except ValueError:
+    #     print(f"Error: Date {target_date_str} not found in the API response.", file=sys.stderr)
+    #     sys.exit(1)
+
+    # # Prepare the payload for our API
+    # payload = {
+    #     "date": target_date_str,
+    #     "temp_max": daily_data["temperature_2m_max"][date_index],
+    #     "temp_min": daily_data["temperature_2m_min"][date_index],
+    #     "precipitation_sum": daily_data["precipitation_sum"][date_index],
+    # }
+
+    # print(f"Found data: {payload}")
+    # post_to_ingest_api(args.base_url, payload)
+
     try:
-        date_index = daily_data["time"].index(target_date_str)
-    except ValueError:
-        print(f"Error: Date {target_date_str} not found in the API response.", file=sys.stderr)
+        import_weather_for_date(
+            target_date_str=target_date_str,
+            base_url=args.base_url,
+            lat=args.lat,
+            lon=args.lon,
+            timezone=args.timezone,
+        )
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
-    # Prepare the payload for our API
-    payload = {
-        "date": target_date_str,
-        "temp_max": daily_data["temperature_2m_max"][date_index],
-        "temp_min": daily_data["temperature_2m_min"][date_index],
-        "precipitation_sum": daily_data["precipitation_sum"][date_index],
-    }
-
-    print(f"Found data: {payload}")
-    post_to_ingest_api(args.base_url, payload)
 
 if __name__ == "__main__":
     main()
