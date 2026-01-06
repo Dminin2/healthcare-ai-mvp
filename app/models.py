@@ -1,6 +1,7 @@
 from sqlalchemy import Column, Integer, Float, Date, Text, DateTime, String
 from sqlalchemy.types import TypeDecorator
 import json
+from datetime import datetime, date, timezone # Added imports
 from .db import Base
 
 # This TypeDecorator is from a previous implementation.
@@ -103,20 +104,116 @@ class StepCount(Base):
 
 class IndicatorThreshold(Base):
 
+
+
+
+
     __tablename__ = "indicator_thresholds"
+
+
+
+
 
     indicator_name = Column(String, primary_key=True, index=True)
 
+
+
+
+
     caution_threshold = Column(Float, nullable=False)
+
+
+
+
 
     danger_threshold = Column(Float, nullable=False)
 
+
+
+
+
     # The following are for the auto-adjustment logic
+
+
+
+
 
     false_alarm_count = Column(Integer, default=0, nullable=False)
 
+
+
+
+
     event_at_ok_count = Column(Integer, default=0, nullable=False)
+
+
+
+
 
     last_updated = Column(DateTime(timezone=True), nullable=False)
 
+
+
+
+
     last_reset_date = Column(Date, nullable=True)
+
+
+
+
+
+
+
+
+
+
+
+class DailyAdvice(Base):
+
+
+
+
+
+    __tablename__ = "daily_advice"
+
+
+
+
+
+    id = Column(Integer, primary_key=True, index=True)
+
+
+
+
+
+    date = Column(Date, unique=True, index=True, nullable=False)
+
+
+
+
+
+    overall_level = Column(String, nullable=False) # e.g., "ok", "caution", "danger"
+
+
+
+
+
+    total_points = Column(Integer, nullable=False)
+
+
+
+
+
+    advice_text = Column(Text, nullable=False)
+
+
+
+
+
+    source = Column(String, nullable=False) # "gemini" or "fallback"
+
+
+
+
+
+    created_at = Column(DateTime(timezone=True), nullable=False, default=datetime.now(timezone.utc))

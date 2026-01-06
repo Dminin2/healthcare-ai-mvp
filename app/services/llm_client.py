@@ -29,27 +29,40 @@ INDICATOR_MAP = {
 
 # --- Main Service Function ---
 
-def generate_advice(analysis: Dict[str, Any]) -> str:
-    """
-    Generates a natural language health advice string from an analysis result.
+# def generate_advice(analysis: Dict[str, Any]) -> str:
+#     """
+#     Generates a natural language health advice string from an analysis result.
 
-    In Step 1, this function acts as a placeholder for a real LLM call.
-    It reads the LLM_PROVIDER environment variable and, if it's 'none' or
-    if any error occurs, it returns a hardcoded, rule-based fallback advice.
-    """
+#     In Step 1, this function acts as a placeholder for a real LLM call.
+#     It reads the LLM_PROVIDER environment variable and, if it's 'none' or
+#     if any error occurs, it returns a hardcoded, rule-based fallback advice.
+#     """
+#     try:
+#         # LLM_PROVIDERがgeminiで、かつAPIキーがある場合のみGeminiを実行
+#         if LLM_PROVIDER == "gemini" and GEMINI_API_KEY:
+#             advice_text = _generate_gemini_advice(analysis)
+#             if advice_text:
+#                 return advice_text
+
+#         # それ以外（none設定やAPIエラー時）はフォールバックを返す
+#         return _generate_fallback_advice(analysis)
+
+#     except Exception as e:
+#         logger.error(f"Error during advice generation: {e}")
+#         return _generate_fallback_advice(analysis or {})
+
+def generate_advice(analysis: Dict[str, Any]) -> tuple[str, str]: # 返り値をタプルに変更
     try:
-        # LLM_PROVIDERがgeminiで、かつAPIキーがある場合のみGeminiを実行
         if LLM_PROVIDER == "gemini" and GEMINI_API_KEY:
             advice_text = _generate_gemini_advice(analysis)
             if advice_text:
-                return advice_text
+                return advice_text, "gemini" # ソースを返す
 
-        # それ以外（none設定やAPIエラー時）はフォールバックを返す
-        return _generate_fallback_advice(analysis)
+        return _generate_fallback_advice(analysis), "fallback" # ソースを返す
 
     except Exception as e:
         logger.error(f"Error during advice generation: {e}")
-        return _generate_fallback_advice(analysis or {})
+        return _generate_fallback_advice(analysis or {}), "error_fallback"
 
 def _generate_gemini_advice(analysis: Dict[str, Any]) -> Optional[str]:
     """Gemini APIを使用して文章を生成する内部関数"""
