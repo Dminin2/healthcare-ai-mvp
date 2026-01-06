@@ -2,7 +2,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
 from datetime import date, timedelta, datetime, timezone
 import json
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional # Added Optional
 from enum import Enum
 
 from . import models, schemas
@@ -322,7 +322,23 @@ def upsert_indicator_threshold(db: Session, threshold_data: models.IndicatorThre
 
 
 
+
+
+
+
     """Updates an existing threshold or creates a new one."""
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -330,7 +346,31 @@ def upsert_indicator_threshold(db: Session, threshold_data: models.IndicatorThre
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
     merged_obj = db.merge(threshold_data)
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -338,4 +378,120 @@ def upsert_indicator_threshold(db: Session, threshold_data: models.IndicatorThre
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
     return merged_obj
+
+
+
+
+
+
+
+
+
+
+
+# --- NEW CRUD Functions for DailyAdvice ---
+
+
+
+
+
+
+
+def get_daily_advice_by_date(db: Session, advice_date: date) -> Optional[models.DailyAdvice]:
+
+
+
+    """Fetches daily advice for a specific date."""
+
+
+
+    return db.query(models.DailyAdvice).filter(models.DailyAdvice.date == advice_date).first()
+
+
+
+
+
+
+
+def upsert_daily_advice(db: Session, advice: schemas.DailyAdviceCreate) -> models.DailyAdvice:
+
+
+
+    """Creates new daily advice or updates an existing one."""
+
+
+
+    db_obj = db.query(models.DailyAdvice).filter(models.DailyAdvice.date == advice.date).first()
+
+
+
+    if db_obj:
+
+
+
+        # Update existing record
+
+
+
+        db_obj.overall_level = advice.overall_level
+
+
+
+        db_obj.total_points = advice.total_points
+
+
+
+        db_obj.advice_text = advice.advice_text
+
+
+
+        db_obj.source = advice.source
+
+
+
+        # created_at should not be updated on upsert unless explicitly intended
+
+
+
+    else:
+
+
+
+        # Create new record
+
+
+
+        db_obj = models.DailyAdvice(**advice.model_dump(), created_at=datetime.now(timezone.utc))
+
+
+
+    db.add(db_obj)
+
+
+
+    db.commit()
+
+
+
+    db.refresh(db_obj)
+
+
+
+    return db_obj
+
+
+
+

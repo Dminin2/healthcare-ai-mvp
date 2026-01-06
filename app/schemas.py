@@ -153,3 +153,31 @@ class AnalysisResult(BaseModel):
     indicators: List[IndicatorResult]
     event_rates: Dict[str, Dict[str, Optional[float]]] = Field(default_factory=dict)
     evidence: AnalysisEvidence = Field(default_factory=AnalysisEvidence)
+
+# --- NEW Schemas for DailyAdvice table ---
+
+class DailyAdviceBase(BaseModel):
+    overall_level: str
+    total_points: int
+    advice_text: str # Changed from 'advice'
+    source: str      # Added 'source' field
+
+class DailyAdviceCreate(DailyAdviceBase):
+    date: date
+
+class DailyAdvice(DailyAdviceBase):
+    id: int
+    date: date
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+# The existing AdviceResponse from routers/advice.py will be updated to use these
+# For now, we will define it based on what routers/advice.py expects
+# and modify routers/advice.py later if needed.
+# For routers/advice.py, it expects: date, overall_level, total_points, advice
+class AdviceResponse(BaseModel):
+    date: date
+    overall_level: str
+    total_points: int
+    advice: str # Still named 'advice' for API compatibility
+

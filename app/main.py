@@ -4,6 +4,7 @@ load_dotenv()
 from fastapi import FastAPI
 from . import models
 from .db import engine
+models.Base.metadata.create_all(bind=engine)
 from .routers import ingest, summary, analysis, advice
 
 def create_app():
