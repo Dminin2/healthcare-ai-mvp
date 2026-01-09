@@ -5,6 +5,13 @@ from datetime import date, datetime
 
 OPEN_METEO_API_URL = "https://api.open-meteo.com/v1/forecast"
 
+LOCATIONS = {
+    "melbourne": {"lat": -37.81, "lon": 144.96, "timezone": "Australia/Melbourne"},
+    "tasmania":  {"lat": -42.8821, "lon": 147.3272, "timezone": "Australia/Hobart"},   # Hobart
+    "sydney":    {"lat": -33.8688, "lon": 151.2093, "timezone": "Australia/Sydney"},
+    "tokyo":     {"lat": 35.6762,  "lon": 139.6503, "timezone": "Asia/Tokyo"},
+}
+
 def fetch_weather_data(lat, lon, timezone):
     """Fetches weather data from the Open-Meteo API."""
     params = {
@@ -76,8 +83,17 @@ def main():
     parser.add_argument("--lon", type=float, default=144.96, help="Longitude. Defaults to Melbourne.")
     parser.add_argument("--timezone", default="Australia/Melbourne", help="Timezone. Defaults to Australia/Melbourne.")
     parser.add_argument("--base-url", default="http://127.0.0.1:8000", help="Base URL of the healthcare-ai API.")
+    parser.add_argument("--location", choices=LOCATIONS.keys(), default="melbourne", help="Select a preset location (default: melbourne).",
+)
 
     args = parser.parse_args()
+
+    loc = LOCATIONS[args.location]
+    args.lat = loc["lat"]
+    args.lon = loc["lon"]
+    args.timezone = loc["timezone"]
+
+    print(f"Using location={args.location} lat={args.lat} lon={args.lon} tz={args.timezone}")
 
     target_date_str = args.date
     try:
