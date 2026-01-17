@@ -1,0 +1,16 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      # .envにあってもいいけど、公開用に重要なので明示推奨
+      - DATABASE_URL=sqlite:////data/healthcare_ai.db
+    volumes:
+      - app-data:/data
+    command: uvicorn app.main:create_app --host 0.0.0.0 --port 8000 --factory
+
+volumes:
+  app-data:
