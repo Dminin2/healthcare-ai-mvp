@@ -6,7 +6,7 @@ services:
     env_file:
       - .env
     environment:
-      # .envにあってもいいけど、公開用に重要なので明示推奨
+      # This can also be set in .env, but explicitly specifying it here is recommended because it is important for public deployment.
       - DATABASE_URL=sqlite:////data/healthcare_ai.db
     volumes:
       - app-data:/data
