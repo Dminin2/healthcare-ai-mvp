@@ -108,7 +108,7 @@ Detailed API documentation is available via Swagger UI.
 
 ---
 
-## Run with Docker (Recommended)
+## Run with Docker
 
 ### Requirements
 - Docker
