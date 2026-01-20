@@ -35,6 +35,15 @@ This project aims to bridge that gap by:
 
 ---
 
+## Development Approach
+
+This project was developed with the assistance of Gemini CLI as a coding support tool.
+
+- System design, API design, and data flow were planned by the developer.
+- Gemini CLI was used to accelerate implementation, generate boilerplate code, and debug errors.
+
+---
+
 ## Features
 
 - Ingest daily weather data from Open-Meteo
@@ -154,6 +163,7 @@ The system can be fully tested using local or sample data.
 
 - Make supported cities configurable (config file or database)
 - Build a web-based interface
+- Code review and refactoring for readability and maintainability
 
 This project focuses on designing a backend API that can serve as a foundation
 for a future web-based interface.
