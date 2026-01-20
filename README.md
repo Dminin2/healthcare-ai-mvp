@@ -1,142 +1,167 @@
-# Healthcare AI API
+# Health × Weather AI Advisor
 
-This project provides an API to track correlations between daily health metrics, personal state, and weather data.
+A backend API that analyzes daily health metrics and weather data
+to estimate personal health risk and generate daily health advice.
 
-## API Server
-
-### How to Run
-
-1.  **Navigate to the project root:**
-    ```bash
-    cd /path/to/healthcare-ai/
-    ```
-
-2.  **Install dependencies:**
-    ```bash
-    pip install -r requirements.txt
-    ```
-
-3.  **Activate your virtual environment (if you have one):**
-    ```bash
-    source .venv/bin/activate
-    ```
-
-4.  **Start the FastAPI application:**
-    ```bash
-    uvicorn app.main:app --reload
-    ```
-    The application will be accessible at `http://127.0.0.1:8000`.
-
-### API Documentation
-
-While the application is running, you can access the interactive API documentation (Swagger UI) at:
-*   `http://127.0.0.1:8000/docs`
-
-This interface allows you to explore and test all API endpoints. Note that all ingestion endpoints (`/ingest/weather`, `/ingest/daily_state`, `/ingest/health_metrics`) are now consolidated under a single "Ingestion" section for a streamlined view.
-
-## Data Import Scripts
-
-### Open-Meteo Weather Data
-
-This script fetches historical weather data for a specific date from the Open-Meteo API and saves it to the database via the local API.
-
-**Prerequisites:**
-- The API server must be running.
-
-**Execution Example:**
-
-To fetch data for a specific date (e.g., December 20, 2025):
-```bash
-python scripts/import_open_meteo.py --date 2025-12-20
-```
-
-If the `--date` argument is omitted, it will fetch data for the current day. You can see all options with `python scripts/import_open_meteo.py --help`.
-
-**Verification:**
-
-After running the script, you can verify that the data was saved correctly:
-1.  Go to the API documentation at `http://127.0.0.1:8000/docs`.
-2.  Open the `GET /summary/last7d` endpoint in the "Summary" section.
-3.  Click "Try it out" and then "Execute".
-4.  Check the response body to ensure the weather data for the specified date has been populated.
+This project is designed as an MVP to explore how environmental factors,
+such as weather conditions, can be combined with personal health data
+to provide interpretable and actionable health insights.
 
 ---
 
-### Health Auto Export Ingestion
+## Overview
 
-The `POST /ingest/health_metrics` endpoint is designed to receive JSON payloads directly from the Health Auto Export app.
+This service ingests daily weather data and personal health metrics,
+evaluates health risk using rule-based logic,
+and generates daily health advice using an LLM with fallback handling.
 
-**`curl` Example:**
-
-You can simulate a payload POST using `curl`. Create a file named `sample-payload.json` with the content below, then run the command.
-
-**`sample-payload.json`:**
-```json
-{
-  "data": {
-    "metrics": [
-      {
-        "name": "resting_heart_rate",
-        "units": "count/min",
-        "data": [{"date":"2025-12-19 00:23:00 +1100","qty":71}]
-      },
-      {
-        "name": "sleep_analysis",
-        "units": "hr",
-        "data": [{
-          "date":"2025-12-19 00:00:00 +1100",
-          "sleepStart":"2025-12-19 02:07:17 +1100",
-          "sleepEnd":"2025-12-19 09:11:47 +1100",
-          "totalSleep":"6.91", "deep":"0.72", "core":"4.30", "rem":"1.88", "awake":"0.15"
-        }]
-      },
-      {
-        "name": "step_count",
-        "units": "count",
-        "data": [{"date":"2025-12-19 00:31:00 +1100","qty":"7403.4"}]
-      }
-    ]
-  }
-}
-```
-
-**`curl` Command:**
-```bash
-curl -X POST 'http://127.0.0.1:8000/ingest/health_metrics' \
--H 'Content-Type: application/json' \
--d @sample-payload.json
-```
-
-The API will respond with a JSON summary of the operation, e.g., `{"message":"Processing completed.","metrics_received":3,"records_inserted":3,"records_skipped":0,"warnings":[]}`.
+The project focuses on:
+- Interpretability over black-box prediction
+- Reproducible backend architecture
+- Future extensibility toward preventive and emergency healthcare use cases
 
 ---
-**Note:** The `GET /health_metrics/latest` endpoint has been removed as part of a refactoring effort to consolidate summary APIs.
+
+## Motivation
+
+Many existing health applications focus on data visualization,
+but do not clearly explain how external factors such as weather
+affect daily physical condition.
+
+This project aims to bridge that gap by:
+- Explicitly modeling weather-related health risks
+- Providing human-readable explanations and advice
+- Serving as a foundation for future medical and healthcare AI systems
+
 ---
 
-### Consolidated Summary API
+## Features
 
-The `GET /summary/last7d` endpoint now provides an integrated summary of weather, daily state, and aggregated health metrics for the last 7 days.
+- Ingest daily weather data from Open-Meteo
+- Ingest personal health metrics (e.g. heart rate, sleep, mood)
+- Rule-based health risk evaluation (OK / Caution / Danger)
+- AI-generated daily health advice with fallback logic
+- Persistent storage of analysis and advice results
+- Reuse stored advice to avoid redundant computation
 
-**`curl` Example:**
+---
 
-```bash
-curl -X GET 'http://127.0.0.1:8000/summary/last7d'
+## Architecture
+
+Data flow:
+
+1. Weather and health data are ingested via API endpoints
+2. Analysis module evaluates daily health risk
+3. Advice module generates personalized advice using an LLM
+4. Results are stored in a database and reused when available
+
+The system is implemented as a RESTful API using FastAPI.
+
+---
+
+## Tech Stack
+
+### Backend
+- Python 3.11
+- FastAPI
+- SQLAlchemy
+- SQLite
+
+### AI / Analysis
+- Rule-based health risk evaluation
+- Gemini API (LLM-based advice generation)
+
+### External Services
+- Open Meteo
+
+### Infrastructure / Dev Tools
+- Docker / Docker Compose
+- pytest
+
+---
+
+## Supported Cities (Current)
+
+For MVP simplicity, supported cities are currently defined statically in the code:
+
+- Tokyo
+- Melbourne
+- Sydney
+- Tasmania
+
+This design choice allows rapid validation and experimentation.
+Future versions will support dynamic configuration via config files,
+database management, or user-defined locations.
+
+---
+
+## API Endpoints
+
+- `POST /ingest/weather`
+- `POST /ingest/health_metrics`
+- `POST /ingest/daily_state`
+- `GET  /summary/last7d`
+- `GET  /analysis/{date}`
+- `GET  /advice/{date}`
+
+Detailed API documentation is available via Swagger UI.
+
+---
+
+## Run with Docker (Recommended)
+
+### Requirements
+- Docker
+- Docker Compose
+
+### Setup
+
+Create a `.env` file in the project root and set required environment variables:
+
+```
+LLM_PROVIDER=gemini
+GEMINI_API_KEY=your_api_key_here
+GEMINI_MODEL=gemini-2.5-flash
 ```
 
-The API will return a JSON array, with each object representing a day and containing aggregated data (or `null` if data is missing for a category).
+### Run
 
-## Testing
-
-The project includes a test suite using `pytest`.
-
-**Prerequisites:**
-- Ensure you have installed the development dependencies: `pip install -r requirements.txt`
-
-**Running Tests:**
-
-From the project root directory, run:
-```bash
-pytest
 ```
-This will discover and run all tests in the `tests/` directory against a temporary test database (`test.db`).
+docker compose up --build
+```
 
+The API will be available at: http://localhost:8000/docs
+
+### Optional: Apple Watch + Cloudflare Setup
+
+For personal use, this project supports real-time ingestion of Apple Watch
+health data using:
+
+- Apple Watch
+- Health Auto Export (iOS)
+- Cloudflare Tunnel
+
+This setup allows health data to be sent from a mobile device
+to a locally running server.
+
+Note:
+This configuration is optional and not required to evaluate or run the project.
+The system can be fully tested using local or sample data.
+
+---
+
+## Roadmap
+
+- Make supported cities configurable (config file or database)
+- Build a web-based interface
+
+This project focuses on designing a backend API that can serve as a foundation
+for a future web-based interface.
+
+
+---
+
+## Disclaimer
+
+This project is for educational and experimental purposes only.
+It is not intended for medical diagnosis or treatment.
