@@ -27,6 +27,26 @@ INDICATOR_MAP = {
     "fatigue_load": "疲労が蓄積している可能性",
 }
 
+# Secondary display guards: even when the label is CAUTION/DANGER, skip the indicator
+# if its value is physically implausible for the stated condition.
+# This catches threshold-drift bugs where the DB threshold fell below a sensible floor.
+_DISPLAY_GUARDS: Dict[str, Any] = {
+    "precipitation":       lambda v: v is not None and v > 0.0,
+    "elevated_resting_hr": lambda v: v is not None and v >= 1.0,
+    "sleep_deficit":       lambda v: v is not None and 0 < v < 24,
+    "high_temperature":    lambda v: v is not None,
+    "low_temperature":     lambda v: v is not None,
+    "temperature_change":  lambda v: v is not None and v >= 0,
+    "high_activity":       lambda v: v is not None,
+    "fatigue_load":        lambda v: True,
+}
+
+
+def _is_valid_for_display(ind: Dict[str, Any]) -> bool:
+    """Returns True if a non-OK indicator passes physical-plausibility checks."""
+    guard = _DISPLAY_GUARDS.get(ind.get("name", ""))
+    return guard is None or guard(ind.get("value"))
+
 # --- Main Service Function ---
 
 # def generate_advice(analysis: Dict[str, Any]) -> str:
@@ -69,15 +89,23 @@ def _generate_gemini_advice(analysis: Dict[str, Any]) -> Optional[str]:
     try:
         from google import genai
 
-        # 入力データの整形（安全のため必要最小限にする）
+        # Strip to minimum fields and exclude indicators that fail display guards.
+        # This prevents the LLM from generating text like "降水量が多い: 0.0mm".
+        def _strip(ind: Dict[str, Any]) -> Dict[str, Any]:
+            return {k: v for k, v in ind.items() if k in ["name", "label", "value", "unit", "related_symptoms"]}
+
+        def _guard_or_ok(ind: Dict[str, Any]) -> Dict[str, Any]:
+            """If label is non-OK but value is implausible, demote label to ok."""
+            stripped = _strip(ind)
+            if _normalize_label(stripped.get("label")) > 0 and not _is_valid_for_display(stripped):
+                stripped["label"] = "ok"
+            return stripped
+
         minimal_analysis = {
             "date": analysis.get("date"),
             "overall_level": analysis.get("overall_level"),
             "total_points": analysis.get("total_points"),
-            "indicators": [
-                {k: v for k, v in ind.items() if k in ["name", "label", "value", "unit", "related_symptoms"]}
-                for ind in analysis.get("indicators", [])
-            ]
+            "indicators": [_guard_or_ok(ind) for ind in analysis.get("indicators", [])],
         }
 
         prompt = ADVICE_PROMPT_TEMPLATE.format(
@@ -147,9 +175,8 @@ def _generate_fallback_advice(analysis: Dict[str, Any]) -> str:
 
     alert_indicators = []
     for ind in indicators:
-        # Normalize label and add to indicator dict
         ind['normalized_label'] = _normalize_label(ind.get("label"))
-        if ind['normalized_label'] > 0:
+        if ind['normalized_label'] > 0 and _is_valid_for_display(ind):
             alert_indicators.append(ind)
 
     # Sort by danger first, then caution
@@ -167,7 +194,7 @@ def _generate_fallback_advice(analysis: Dict[str, Any]) -> str:
         value = ind.get("value")
         unit = ind.get("unit")
         if value is not None and unit:
-             line += f": {value}{unit}"
+            line += f": {round(value, 1)}{unit}"
 
         symptoms = ind.get("related_symptoms", [])
         if symptoms:

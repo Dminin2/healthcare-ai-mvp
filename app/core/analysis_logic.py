@@ -49,6 +49,20 @@ ADJUSTMENT_PARAMS = {
         IndicatorName.ELEVATED_RESTING_HR: 1.0,
     }
 }
+
+# Hard bounds for threshold adjustment: (min, max), None = no bound in that direction.
+# Prevents repeated adjustments from driving thresholds to physically nonsensical values
+# (e.g., precipitation caution at 0.0mm, or resting-HR delta caution at 0.0 bpm).
+THRESHOLD_BOUNDS: Dict[str, Dict[str, tuple]] = {
+    IndicatorName.HIGH_TEMPERATURE:    {"caution": (28.0, None), "danger": (30.0, None)},
+    IndicatorName.LOW_TEMPERATURE:     {"caution": (None, 10.0), "danger": (None,  5.0)},
+    IndicatorName.PRECIPITATION:       {"caution": ( 1.0, None), "danger": ( 8.0, None)},
+    IndicatorName.TEMPERATURE_CHANGE:  {"caution": ( 2.0, None), "danger": ( 4.0, None)},
+    IndicatorName.HIGH_ACTIVITY:       {"caution": ( 0.5, None), "danger": ( 1.0, None)},
+    IndicatorName.SLEEP_DEFICIT:       {"caution": ( 4.0,  8.0), "danger": ( 3.0,  6.5)},
+    IndicatorName.ELEVATED_RESTING_HR: {"caution": ( 1.0, None), "danger": ( 3.0, None)},
+}
+
 ANALYSIS_HISTORY_DAYS = 30
 
 # --- 2. Main Orchestration Function ---
@@ -302,6 +316,23 @@ def _adjust_thresholds(db: Session, thresholds: Dict[str, models.IndicatorThresh
             thresh.false_alarm_count = 0
             thresh.event_at_ok_count = 0
             thresh.last_reset_date = day_to_check
-        
+            _apply_threshold_bounds(thresh, ind_name)
+
         thresh.last_updated = datetime.now(timezone.utc)
         crud.upsert_indicator_threshold(db, thresh)
+
+def _apply_threshold_bounds(thresh: models.IndicatorThreshold, ind_name: str) -> None:
+    """Clamps thresh in-place to THRESHOLD_BOUNDS so adjustments stay physically sensible."""
+    bounds = THRESHOLD_BOUNDS.get(ind_name)
+    if not bounds:
+        return
+    c_min, c_max = bounds["caution"]
+    d_min, d_max = bounds["danger"]
+    if c_min is not None:
+        thresh.caution_threshold = max(thresh.caution_threshold, c_min)
+    if c_max is not None:
+        thresh.caution_threshold = min(thresh.caution_threshold, c_max)
+    if d_min is not None:
+        thresh.danger_threshold = max(thresh.danger_threshold, d_min)
+    if d_max is not None:
+        thresh.danger_threshold = min(thresh.danger_threshold, d_max)
