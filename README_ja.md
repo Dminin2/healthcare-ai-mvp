@@ -105,16 +105,91 @@ MVPとしての検証を優先するため、
 
 ---
 
+## 認証
+
+v1.0.0 よりマルチユーザー対応になりました。
+データ取得・分析・アドバイス系 API はすべて JWT 認証が必要です。
+
+### セットアップ
+
+`.env.example` を `.env` にコピーし、`SECRET_KEY` を変更してください。
+
+```bash
+cp .env.example .env
+# SECRET_KEY に openssl rand -hex 32 の出力を設定
+```
+
+### ユーザー登録
+
+```bash
+curl -X POST http://localhost:8000/auth/signup \
+  -H "Content-Type: application/json" \
+  -d '{"email": "you@example.com", "password": "yourpassword"}'
+```
+
+### ログイン（JWT 取得）
+
+```bash
+curl -X POST http://localhost:8000/auth/login \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "username=you@example.com&password=yourpassword"
+# → {"access_token": "eyJ...", "token_type": "bearer"}
+```
+
+### 認証付きリクエスト例
+
+```bash
+TOKEN="eyJ..."   # ↑ で取得したトークン
+
+# アドバイス取得
+curl http://localhost:8000/advice/2025-12-20 \
+  -H "Authorization: Bearer $TOKEN"
+
+# 健康データ取り込み
+curl -X POST http://localhost:8000/ingest/health_metrics \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"data": {"metrics": [...]}}'
+
+# 気象データ取り込み
+curl -X POST http://localhost:8000/ingest/weather \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"date": "2025-12-20", "temp_max": 18.5, "temp_min": 10.2}'
+
+# 7日間サマリー
+curl http://localhost:8000/summary/last7d \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+### Swagger UI での動作確認
+
+`/docs` を開き、画面右上の **Authorize** ボタンをクリックして
+`username`（メールアドレス）と `password` を入力すると、
+全エンドポイントを認証済み状態で試せます。
+
+---
+
 ## API エンドポイント一覧
 
-本プロジェクトでは、以下のエンドポイントを提供しています。
+### 認証
 
-- `POST /ingest/weather`
-- `POST /ingest/health_metrics`
-- `POST /ingest/daily_state`
-- `GET  /summary/last7d`
-- `GET  /analysis/{date}`
-- `GET  /advice/{date}`
+| Method | Path | 説明 |
+|---|---|---|
+| POST | `/auth/signup` | ユーザー登録 |
+| POST | `/auth/login` | ログイン・JWT 取得 |
+| GET | `/auth/me` | 認証ユーザー情報取得 |
+
+### データ（要認証）
+
+| Method | Path | 説明 |
+|---|---|---|
+| POST | `/ingest/weather` | 気象データ取り込み(管理者のみ) |
+| POST | `/ingest/health_metrics` | ウェアラブルデータ取り込み |
+| POST | `/ingest/daily_state` | 体調ログ取り込み |
+| GET | `/summary/last7d` | 直近7日間サマリー |
+| GET | `/analysis/{date}` | 日次リスク分析(管理者のみ) |
+| GET | `/advice/{date}` | 自然言語アドバイス生成 |
 
 詳細なリクエスト・レスポンス仕様は、
 Swagger UI（`/docs`）から確認できます。
