@@ -12,12 +12,11 @@ from app import models # Added this import
 # --- Test Cases ---
 
 @pytest.mark.test_db_url("sqlite:///./test_analysis.db")
-def test_thresholds_are_initialized(db_session_for_test_function): # Use db_session_for_test_function
+def test_thresholds_are_initialized(db_session_for_test_function, test_user):
     count_before = db_session_for_test_function.query(models.IndicatorThreshold).count()
     assert count_before == 0
 
-    # Directly call the initialization logic. This will commit to the session.
-    analysis_logic._initialize_thresholds(db_session_for_test_function)
+    analysis_logic._initialize_thresholds(db_session_for_test_function, test_user.id)
 
     count_after = db_session_for_test_function.query(models.IndicatorThreshold).count()
     assert count_after == len(analysis_logic.INITIAL_THRESHOLDS)
