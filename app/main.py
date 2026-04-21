@@ -5,13 +5,13 @@ from fastapi import FastAPI
 from . import models
 from .db import engine
 models.Base.metadata.create_all(bind=engine)
-from .routers import ingest, summary, analysis, advice
+from .routers import ingest, summary, analysis, advice, auth
 
 def create_app():
     app = FastAPI(
         title="Healthcare AI API",
         description="API for ingesting, retrieving, analyzing, and generating advice from daily health and weather data.",
-        version="0.5.0",
+        version="1.0.0",
     )
 
     @app.get("/", tags=["Root"])
@@ -19,6 +19,7 @@ def create_app():
         return {"message": "Welcome to the Healthcare AI API"}
 
     # Include routers
+    app.include_router(auth.router)
     app.include_router(ingest.router)
     app.include_router(summary.router)
     app.include_router(analysis.router)

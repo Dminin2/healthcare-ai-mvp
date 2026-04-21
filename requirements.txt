@@ -8,3 +8,6 @@ httpx
 numpy
 google-genai
 python-dotenv
+python-jose[cryptography]
+bcrypt
+python-multipart

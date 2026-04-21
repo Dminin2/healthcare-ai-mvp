@@ -1,7 +1,27 @@
-from pydantic import BaseModel, ConfigDict, field_validator, Field
+from pydantic import BaseModel, ConfigDict, field_validator, Field, EmailStr
 from datetime import date, datetime
 from typing import Optional, List, Union, Any, Dict
 from enum import Enum
+
+
+# ---------------------------------------------------------------------------
+# Auth schemas
+# ---------------------------------------------------------------------------
+
+class UserCreate(BaseModel):
+    email: str
+    password: str
+
+class UserRead(BaseModel):
+    id: int
+    email: str
+    is_admin: bool
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
 
 # Utility function for parsing inconsistent number formats
 def to_float(value: Any) -> Optional[float]:

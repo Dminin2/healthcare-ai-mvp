@@ -2,64 +2,78 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
 from datetime import date, timedelta, datetime, timezone
 import json
-from typing import Dict, Any, List, Optional # Added Optional
-from enum import Enum
+from typing import Dict, Any, List, Optional
 
 from . import models, schemas
 from dateutil.parser import parse as dateutil_parse
 
-# --- NEW CRUD for Health Auto Export ---
 
-def parse_and_save_metric(db: Session, metric: schemas.HealthMetric, summary: schemas.IngestResponseSummary):
-    """Parses a single metric from the payload and saves it to the appropriate table."""
+# ---------------------------------------------------------------------------
+# User CRUD
+# ---------------------------------------------------------------------------
+
+def get_user_by_email(db: Session, email: str) -> Optional[models.User]:
+    return db.query(models.User).filter(models.User.email == email).first()
+
+
+# ---------------------------------------------------------------------------
+# Health Auto Export ingest
+# ---------------------------------------------------------------------------
+
+def parse_and_save_metric(
+    db: Session,
+    metric: schemas.HealthMetric,
+    summary: schemas.IngestResponseSummary,
+    user_id: int,
+):
+    """Parses a single metric from the Health Auto Export payload and saves it."""
     metric_name = metric.name
-    
+
     for item in metric.data:
         try:
-            # Centralized date parsing
-            # For RHR and StepCount, 'date' is timestamp. For Sleep, 'sleepStart' is timestamp.
-            # Use 'date' if available, otherwise 'sleepStart' for error reporting context.
             record_time_str_for_error = item.get("date") or item.get("sleepStart")
-            
+
             if metric_name == "resting_heart_rate":
                 record_time = dateutil_parse(item["date"])
                 value = schemas.to_float(item.get("qty"))
                 if value is None:
-                    summary.warnings.append(f"Could not parse 'qty' for resting_heart_rate at {record_time_str_for_error}")
+                    summary.warnings.append(
+                        f"Could not parse 'qty' for resting_heart_rate at {record_time_str_for_error}"
+                    )
                     summary.records_skipped += 1
                     continue
-                
-                db_record = models.RestingHeartRate(
+                db.add(models.RestingHeartRate(
+                    user_id=user_id,
                     timestamp=record_time,
                     value=int(value),
                     unit=metric.units,
-                    source=item.get("source")
-                )
-                db.add(db_record)
+                    source=item.get("source"),
+                ))
                 summary.records_inserted += 1
 
             elif metric_name == "step_count":
                 record_time = dateutil_parse(item["date"])
                 value = schemas.to_float(item.get("qty"))
                 if value is None:
-                    summary.warnings.append(f"Could not parse 'qty' for step_count at {record_time_str_for_error}")
+                    summary.warnings.append(
+                        f"Could not parse 'qty' for step_count at {record_time_str_for_error}"
+                    )
                     summary.records_skipped += 1
                     continue
-
-                db_record = models.StepCount(
+                db.add(models.StepCount(
+                    user_id=user_id,
                     timestamp=record_time,
                     value=value,
                     unit=metric.units,
-                    source=item.get("source")
-                )
-                db.add(db_record)
+                    source=item.get("source"),
+                ))
                 summary.records_inserted += 1
 
             elif metric_name == "sleep_analysis":
                 start_time = dateutil_parse(item["sleepStart"])
                 end_time = dateutil_parse(item["sleepEnd"])
-                
-                db_record = models.SleepSession(
+                db.add(models.SleepSession(
+                    user_id=user_id,
                     session_start_time=start_time,
                     session_end_time=end_time,
                     total_sleep_hours=schemas.to_float(item["totalSleep"]),
@@ -69,119 +83,131 @@ def parse_and_save_metric(db: Session, metric: schemas.HealthMetric, summary: sc
                     awake_hours=schemas.to_float(item.get("awake")),
                     source=item.get("source"),
                     raw_date_str=item["date"],
-                    created_at=datetime.now(timezone.utc)
-                )
-                db.add(db_record)
+                    created_at=datetime.now(timezone.utc),
+                ))
                 summary.records_inserted += 1
-            
+
         except Exception as e:
-            summary.warnings.append(f"Failed to process item in '{metric_name}' due to: {e}. Item: {item}")
+            summary.warnings.append(
+                f"Failed to process item in '{metric_name}' due to: {e}. Item: {item}"
+            )
             summary.records_skipped += 1
 
 
-def process_and_save_health_metrics(db: Session, payload: schemas.HealthAutoExportPayload) -> schemas.IngestResponseSummary:
-    """
-    Processes the entire Health Auto Export payload, saves raw data,
-    and normalizes known metrics into structured tables.
-    """
+def process_and_save_health_metrics(
+    db: Session,
+    payload: schemas.HealthAutoExportPayload,
+    user_id: int,
+) -> schemas.IngestResponseSummary:
     summary = schemas.IngestResponseSummary(
         message="Processing completed.",
         metrics_received=len(payload.data.metrics),
         records_inserted=0,
         records_skipped=0,
-        warnings=[]
+        warnings=[],
     )
 
-    # 1. Save the raw payload
-    raw_payload_record = models.HealthMetricRaw(
+    db.add(models.HealthMetricRaw(
+        user_id=user_id,
         received_at=datetime.now(timezone.utc),
-        payload_json=payload.model_dump_json()
-    )
-    db.add(raw_payload_record)
+        payload_json=payload.model_dump_json(),
+    ))
 
-    # 2. Iterate through metrics and save normalized data
     known_metrics = {"resting_heart_rate", "step_count", "sleep_analysis"}
     for metric in payload.data.metrics:
         if metric.name in known_metrics:
-            parse_and_save_metric(db, metric, summary)
+            parse_and_save_metric(db, metric, summary, user_id)
         else:
-            summary.warnings.append(f"Unknown metric type received and skipped: '{metric.name}'")
-    
-    # 3. We don't commit here, we let the endpoint do it after returning the summary
-    # This is because the test client setup uses a single transaction that rolls back.
-    # In a real app, you might commit here. For the test suite to work, we must flush.
+            summary.warnings.append(
+                f"Unknown metric type received and skipped: '{metric.name}'"
+            )
+
     db.flush()
-    
     return summary
 
 
-# --- Rewritten get_summary_last_n_days for integrated summary ---
+# ---------------------------------------------------------------------------
+# Summary
+# ---------------------------------------------------------------------------
 
-def get_summary_last_n_days(db: Session, days: int = 7) -> List[schemas.SummaryData]:
-    end_date_utc = datetime.now(timezone.utc).date() # Today's date in UTC
-    
+def get_summary_last_n_days(
+    db: Session, user_id: int, days: int = 7
+) -> List[schemas.SummaryData]:
+    end_date_utc = datetime.now(timezone.utc).date()
+
     summary_list = []
     for i in range(days):
         current_date_utc = end_date_utc - timedelta(days=i)
-        
-        # Start and end of the current UTC day
-        start_of_current_day_utc = datetime(current_date_utc.year, current_date_utc.month, current_date_utc.day, tzinfo=timezone.utc)
-        end_of_current_day_utc = start_of_current_day_utc + timedelta(days=1)
-        
-        # --- Query Weather and DailyState ---
-        weather_record = db.query(models.Weather).filter(models.Weather.date == current_date_utc).first()
-        daily_state_record = db.query(models.DailyState).filter(models.DailyState.date == current_date_utc).first()
-        
-        # --- Aggregate Health Metrics ---
-        # 1. Steps: Sum for the current UTC day
+        start_of_day = datetime(
+            current_date_utc.year, current_date_utc.month, current_date_utc.day,
+            tzinfo=timezone.utc,
+        )
+        end_of_day = start_of_day + timedelta(days=1)
+
+        weather_record = (
+            db.query(models.Weather)
+            .filter(models.Weather.date == current_date_utc)
+            .first()
+        )
+        daily_state_record = (
+            db.query(models.DailyState)
+            .filter(models.DailyState.user_id == user_id, models.DailyState.date == current_date_utc)
+            .first()
+        )
+
         total_steps = db.query(func.sum(models.StepCount.value)).filter(
-            and_(
-                models.StepCount.timestamp >= start_of_current_day_utc,
-                models.StepCount.timestamp < end_of_current_day_utc
-            )
+            models.StepCount.user_id == user_id,
+            models.StepCount.timestamp >= start_of_day,
+            models.StepCount.timestamp < end_of_day,
         ).scalar()
 
-        # 2. Resting HR: Average for the current UTC day
         avg_resting_hr = db.query(func.avg(models.RestingHeartRate.value)).filter(
-            and_(
-                models.RestingHeartRate.timestamp >= start_of_current_day_utc,
-                models.RestingHeartRate.timestamp < end_of_current_day_utc
-            )
+            models.RestingHeartRate.user_id == user_id,
+            models.RestingHeartRate.timestamp >= start_of_day,
+            models.RestingHeartRate.timestamp < end_of_day,
         ).scalar()
         if avg_resting_hr is not None:
-            avg_resting_hr = round(avg_resting_hr, 1) # Round to 1 decimal place
+            avg_resting_hr = round(avg_resting_hr, 1)
 
-        # 3. Sleep Hours: Sum for sessions ending on the current UTC day
         total_sleep_hours = db.query(func.sum(models.SleepSession.total_sleep_hours)).filter(
-            and_(
-                func.date(models.SleepSession.session_end_time) == current_date_utc # Match end date with current_date_utc
-            )
+            models.SleepSession.user_id == user_id,
+            func.date(models.SleepSession.session_end_time) == current_date_utc,
         ).scalar()
         if total_sleep_hours is not None:
-            total_sleep_hours = round(total_sleep_hours, 2) # Round to 2 decimal places
+            total_sleep_hours = round(total_sleep_hours, 2)
 
         health_metrics_summary = schemas.HealthMetricsSummary(
             steps=int(total_steps) if total_steps is not None else None,
             sleep_hours=total_sleep_hours,
-            resting_hr=avg_resting_hr
+            resting_hr=avg_resting_hr,
         )
 
-        # --- Construct SummaryData ---
-        summary_entry = schemas.SummaryData(
+        summary_list.append(schemas.SummaryData(
             date=current_date_utc,
             weather=weather_record,
             daily_state=daily_state_record,
-            health_metrics=health_metrics_summary if any([health_metrics_summary.steps, health_metrics_summary.sleep_hours, health_metrics_summary.resting_hr]) else None
-        )
-        summary_list.append(summary_entry)
-        
+            health_metrics=(
+                health_metrics_summary
+                if any([health_metrics_summary.steps,
+                        health_metrics_summary.sleep_hours,
+                        health_metrics_summary.resting_hr])
+                else None
+            ),
+        ))
+
     return summary_list
 
 
-# --- Existing CRUD Functions (Largely untouched for backward compatibility) ---
+# ---------------------------------------------------------------------------
+# Weather / DailyState upsert
+# ---------------------------------------------------------------------------
 
-def upsert_weather(db: Session, weather: schemas.WeatherCreate):
-    db_obj = db.query(models.Weather).filter(models.Weather.date == weather.date).first()
+def upsert_weather(db: Session, weather: schemas.WeatherCreate) -> models.Weather:
+    db_obj = (
+        db.query(models.Weather)
+        .filter(models.Weather.date == weather.date)
+        .first()
+    )
     if db_obj:
         for key, value in weather.model_dump().items():
             setattr(db_obj, key, value)
@@ -192,306 +218,154 @@ def upsert_weather(db: Session, weather: schemas.WeatherCreate):
     db.refresh(db_obj)
     return db_obj
 
-def upsert_daily_state(db: Session, daily_state: schemas.DailyStateCreate):
 
-    db_obj = db.query(models.DailyState).filter(models.DailyState.date == daily_state.date).first()
-
+def upsert_daily_state(
+    db: Session, daily_state: schemas.DailyStateCreate, user_id: int
+) -> models.DailyState:
+    db_obj = (
+        db.query(models.DailyState)
+        .filter(models.DailyState.user_id == user_id, models.DailyState.date == daily_state.date)
+        .first()
+    )
     if db_obj:
-
         for key, value in daily_state.model_dump().items():
-
             setattr(db_obj, key, value)
-
     else:
-
-        db_obj = models.DailyState(**daily_state.model_dump())
-
+        db_obj = models.DailyState(**daily_state.model_dump(), user_id=user_id)
     db.add(db_obj)
-
     db.commit()
-
     db.refresh(db_obj)
-
     return db_obj
 
 
+# ---------------------------------------------------------------------------
+# Analysis: date-range queries (all filtered by user_id)
+# ---------------------------------------------------------------------------
 
-# --- NEW CRUD Functions for Analysis ---
-
-
-
-def get_weather_for_date_range(db: Session, start_date: date, end_date: date) -> List[models.Weather]:
-
-    """Fetches weather records for a given date range."""
-
-    return db.query(models.Weather).filter(
-
-        models.Weather.date.between(start_date, end_date)
-
-    ).order_by(models.Weather.date.asc()).all()
-
-
-
-def get_daily_states_for_date_range(db: Session, start_date: date, end_date: date) -> List[models.DailyState]:
-
-    """Fetches daily state records for a given date range."""
-
-    return db.query(models.DailyState).filter(
-
-        models.DailyState.date.between(start_date, end_date)
-
-    ).order_by(models.DailyState.date.asc()).all()
-
-
-
-def get_aggregated_health_metrics_for_date(db: Session, target_date: date) -> schemas.HealthMetricsSummary:
-
-    """Computes aggregated health metrics (steps, sleep, HR) for a single specific day."""
-
-    start_of_day_utc = datetime(target_date.year, target_date.month, target_date.day, tzinfo=timezone.utc)
-
-    end_of_day_utc = start_of_day_utc + timedelta(days=1)
-
-
-
-    # Sum steps for the day
-
-    total_steps = db.query(func.sum(models.StepCount.value)).filter(
-
-        models.StepCount.timestamp >= start_of_day_utc,
-
-        models.StepCount.timestamp < end_of_day_utc
-
-    ).scalar()
-
-
-
-    # Average resting HR for the day
-
-    avg_resting_hr = db.query(func.avg(models.RestingHeartRate.value)).filter(
-
-        models.RestingHeartRate.timestamp >= start_of_day_utc,
-
-        models.RestingHeartRate.timestamp < end_of_day_utc
-
-    ).scalar()
-
-    if avg_resting_hr is not None:
-
-        avg_resting_hr = round(avg_resting_hr, 1)
-
-
-
-    # Sum sleep for sessions ending on that day
-
-    total_sleep_hours = db.query(func.sum(models.SleepSession.total_sleep_hours)).filter(
-
-        func.date(models.SleepSession.session_end_time) == target_date
-
-    ).scalar()
-
-    if total_sleep_hours is not None:
-
-        total_sleep_hours = round(total_sleep_hours, 2)
-
-
-
-    return schemas.HealthMetricsSummary(
-
-        steps=int(total_steps) if total_steps is not None else None,
-
-        sleep_hours=total_sleep_hours,
-
-        resting_hr=avg_resting_hr
-
+def get_weather_for_date_range(
+    db: Session, start_date: date, end_date: date
+) -> List[models.Weather]:
+    return (
+        db.query(models.Weather)
+        .filter(models.Weather.date.between(start_date, end_date))
+        .order_by(models.Weather.date.asc())
+        .all()
     )
 
 
+def get_daily_states_for_date_range(
+    db: Session, user_id: int, start_date: date, end_date: date
+) -> List[models.DailyState]:
+    return (
+        db.query(models.DailyState)
+        .filter(
+            models.DailyState.user_id == user_id,
+            models.DailyState.date.between(start_date, end_date),
+        )
+        .order_by(models.DailyState.date.asc())
+        .all()
+    )
 
-def get_indicator_thresholds(db: Session) -> Dict[str, models.IndicatorThreshold]:
 
-    """Fetches all indicator thresholds and returns them as a dictionary keyed by name."""
+def get_aggregated_health_metrics_for_date(
+    db: Session, user_id: int, target_date: date
+) -> schemas.HealthMetricsSummary:
+    start_of_day = datetime(
+        target_date.year, target_date.month, target_date.day, tzinfo=timezone.utc
+    )
+    end_of_day = start_of_day + timedelta(days=1)
 
-    thresholds = db.query(models.IndicatorThreshold).all()
+    total_steps = db.query(func.sum(models.StepCount.value)).filter(
+        models.StepCount.user_id == user_id,
+        models.StepCount.timestamp >= start_of_day,
+        models.StepCount.timestamp < end_of_day,
+    ).scalar()
 
+    avg_resting_hr = db.query(func.avg(models.RestingHeartRate.value)).filter(
+        models.RestingHeartRate.user_id == user_id,
+        models.RestingHeartRate.timestamp >= start_of_day,
+        models.RestingHeartRate.timestamp < end_of_day,
+    ).scalar()
+    if avg_resting_hr is not None:
+        avg_resting_hr = round(avg_resting_hr, 1)
+
+    total_sleep_hours = db.query(func.sum(models.SleepSession.total_sleep_hours)).filter(
+        models.SleepSession.user_id == user_id,
+        func.date(models.SleepSession.session_end_time) == target_date,
+    ).scalar()
+    if total_sleep_hours is not None:
+        total_sleep_hours = round(total_sleep_hours, 2)
+
+    return schemas.HealthMetricsSummary(
+        steps=int(total_steps) if total_steps is not None else None,
+        sleep_hours=total_sleep_hours,
+        resting_hr=avg_resting_hr,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Indicator thresholds (per-user, composite PK)
+# ---------------------------------------------------------------------------
+
+def get_indicator_thresholds(
+    db: Session, user_id: int
+) -> Dict[str, models.IndicatorThreshold]:
+    thresholds = (
+        db.query(models.IndicatorThreshold)
+        .filter(models.IndicatorThreshold.user_id == user_id)
+        .all()
+    )
     return {t.indicator_name: t for t in thresholds}
 
 
-
-def upsert_indicator_threshold(db: Session, threshold_data: models.IndicatorThreshold) -> models.IndicatorThreshold:
-
-
-
-
-
-
-
-    """Updates an existing threshold or creates a new one."""
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    # This is a simple merge, more complex logic might be needed
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    merged_obj = db.merge(threshold_data)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    db.commit() # Commit the changes here to ensure persistence
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    return merged_obj
-
-
-
-
-
-
-
-
-
-
-
-# --- NEW CRUD Functions for DailyAdvice ---
-
-
-
-
-
-
-
-def get_daily_advice_by_date(db: Session, advice_date: date) -> Optional[models.DailyAdvice]:
-
-
-
-    """Fetches daily advice for a specific date."""
-
-
-
-    return db.query(models.DailyAdvice).filter(models.DailyAdvice.date == advice_date).first()
-
-
-
-
-
-
-
-def upsert_daily_advice(db: Session, advice: schemas.DailyAdviceCreate) -> models.DailyAdvice:
-
-
-
-    """Creates new daily advice or updates an existing one."""
-
-
-
-    db_obj = db.query(models.DailyAdvice).filter(models.DailyAdvice.date == advice.date).first()
-
-
-
-    if db_obj:
-
-
-
-        # Update existing record
-
-
-
-        db_obj.overall_level = advice.overall_level
-
-
-
-        db_obj.total_points = advice.total_points
-
-
-
-        db_obj.advice_text = advice.advice_text
-
-
-
-        db_obj.source = advice.source
-
-
-
-        # created_at should not be updated on upsert unless explicitly intended
-
-
-
-    else:
-
-
-
-        # Create new record
-
-
-
-        db_obj = models.DailyAdvice(**advice.model_dump(), created_at=datetime.now(timezone.utc))
-
-
-
-    db.add(db_obj)
-
-
-
+def upsert_indicator_threshold(
+    db: Session, threshold_data: models.IndicatorThreshold
+) -> models.IndicatorThreshold:
+    merged = db.merge(threshold_data)
     db.commit()
+    return merged
 
 
+# ---------------------------------------------------------------------------
+# Daily advice cache
+# ---------------------------------------------------------------------------
 
+def get_daily_advice_by_date(
+    db: Session, user_id: int, advice_date: date
+) -> Optional[models.DailyAdvice]:
+    return (
+        db.query(models.DailyAdvice)
+        .filter(
+            models.DailyAdvice.user_id == user_id,
+            models.DailyAdvice.date == advice_date,
+        )
+        .first()
+    )
+
+
+def upsert_daily_advice(
+    db: Session, user_id: int, advice: schemas.DailyAdviceCreate
+) -> models.DailyAdvice:
+    db_obj = (
+        db.query(models.DailyAdvice)
+        .filter(
+            models.DailyAdvice.user_id == user_id,
+            models.DailyAdvice.date == advice.date,
+        )
+        .first()
+    )
+    if db_obj:
+        db_obj.overall_level = advice.overall_level
+        db_obj.total_points = advice.total_points
+        db_obj.advice_text = advice.advice_text
+        db_obj.source = advice.source
+    else:
+        db_obj = models.DailyAdvice(
+            **advice.model_dump(),
+            user_id=user_id,
+            created_at=datetime.now(timezone.utc),
+        )
+    db.add(db_obj)
+    db.commit()
     db.refresh(db_obj)
-
-
-
     return db_obj
-
-
-
-

@@ -67,15 +67,17 @@ ANALYSIS_HISTORY_DAYS = 30
 
 # --- 2. Main Orchestration Function ---
 
-def run_daily_analysis(db_session: Session, analysis_date: date) -> Optional[schemas.AnalysisResult]:
-    thresholds = _initialize_thresholds(db_session)
+def run_daily_analysis(
+    db_session: Session, analysis_date: date, user_id: int
+) -> Optional[schemas.AnalysisResult]:
+    thresholds = _initialize_thresholds(db_session, user_id)
     start_date = analysis_date - timedelta(days=ANALYSIS_HISTORY_DAYS + 8)
-    
+
     try:
         raw_weather = crud.get_weather_for_date_range(db_session, start_date, analysis_date)
-        raw_daily_states = crud.get_daily_states_for_date_range(db_session, start_date, analysis_date)
+        raw_daily_states = crud.get_daily_states_for_date_range(db_session, user_id, start_date, analysis_date)
         raw_health_metrics = {
-            d: crud.get_aggregated_health_metrics_for_date(db_session, d)
+            d: crud.get_aggregated_health_metrics_for_date(db_session, user_id, d)
             for d in (start_date + timedelta(days=i) for i in range((analysis_date - start_date).days + 1))
         }
     except Exception as e:
@@ -139,20 +141,23 @@ def run_daily_analysis(db_session: Session, analysis_date: date) -> Optional[sch
 
 # --- 3. Helper Functions (Data Prep & Calc) ---
 # Unchanged...
-def _initialize_thresholds(db: Session) -> Dict[str, models.IndicatorThreshold]:
-    current_thresholds = crud.get_indicator_thresholds(db)
+def _initialize_thresholds(db: Session, user_id: int) -> Dict[str, models.IndicatorThreshold]:
+    current_thresholds = crud.get_indicator_thresholds(db, user_id)
     updated = False
     for name, values in INITIAL_THRESHOLDS.items():
         if name not in current_thresholds:
             threshold_obj = models.IndicatorThreshold(
-                indicator_name=name, caution_threshold=values["caution"],
-                danger_threshold=values["danger"], last_updated=datetime.now(timezone.utc)
+                user_id=user_id,
+                indicator_name=name,
+                caution_threshold=values["caution"],
+                danger_threshold=values["danger"],
+                last_updated=datetime.now(timezone.utc),
             )
-            crud.upsert_indicator_threshold(db, threshold_obj) # This commits the individual upsert
+            crud.upsert_indicator_threshold(db, threshold_obj)
             updated = True
     if updated:
-        db.commit() # Commit the new thresholds here if there were updates
-    return crud.get_indicator_thresholds(db)
+        db.commit()
+    return crud.get_indicator_thresholds(db, user_id)
 
 def _normalize_data(weather, health, states) -> Dict[date, Dict[str, Any]]:
     normalized = {}
