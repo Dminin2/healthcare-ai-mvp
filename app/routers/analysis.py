@@ -15,16 +15,17 @@ router = APIRouter(
 
 
 @router.get("/{date}", response_model=schemas.AnalysisResult,
-            summary="Perform daily health risk analysis (管理者専用)")
+            summary="Run daily health risk analysis (admin only)")
 def get_daily_analysis(
-    date: date = Path(..., description="The date for the analysis in YYYY-MM-DD format."),
-    user_id: Optional[int] = Query(None, description="対象ユーザーID（省略時は管理者自身）"),
+    date: date = Path(..., description="Target date in YYYY-MM-DD format."),
+    user_id: Optional[int] = Query(None, description="User ID to analyze. Defaults to the admin's own ID if omitted."),
     db_session: Session = Depends(get_db),
     current_admin: models.User = Depends(get_current_admin),
 ):
     """
-    指定ユーザーの日次健康リスク分析を実行します。管理者のみ実行可能です。
-    user_id を省略した場合は管理者自身のデータを分析します。
+    Execute the rule-based health risk analysis for the specified date and user.
+    Requires admin privileges. If `user_id` is omitted, the admin's own data is analyzed.
+    Returns 404 when core weather or health data is missing for the target day.
     """
     target_user_id = user_id if user_id is not None else current_admin.id
 

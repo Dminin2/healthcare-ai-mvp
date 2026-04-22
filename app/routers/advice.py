@@ -10,20 +10,25 @@ from ..dependencies import get_db, get_current_user
 router = APIRouter(
     prefix="/advice",
     tags=["Advice"],
-    responses={404: {"description": "not found"}},
+    responses={404: {"description": "Not found"}},
 )
 
 
 @router.get("/{date}", response_model=schemas.AdviceResponse,
             summary="Generate natural language health advice")
 def get_daily_advice(
-    date: date = Path(..., description="The date for the advice in YYYY-MM-DD format."),
+    date: date = Path(..., description="Target date in YYYY-MM-DD format."),
     db_session: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
+    """
+    Return a natural language health advice message for the authenticated user on the
+    given date. Cached results are returned immediately; otherwise the analysis pipeline
+    runs and the generated advice is persisted for future requests.
+    Returns 404 when insufficient data exists to perform the analysis.
+    """
     user_id = current_user.id
 
-    # 1. Return cached advice if available
     stored = crud.get_daily_advice_by_date(db_session, user_id, date)
     if stored:
         return schemas.AdviceResponse(
@@ -33,7 +38,6 @@ def get_daily_advice(
             advice=stored.advice_text,
         )
 
-    # 2. Run analysis
     analysis_result = analysis_logic.run_daily_analysis(
         db_session=db_session, analysis_date=date, user_id=user_id
     )
@@ -46,15 +50,13 @@ def get_daily_advice(
     if not analysis_result or has_missing:
         raise HTTPException(
             status_code=404,
-            detail="分析に必要なデータが不足しているため、アドバイスを生成できません。",
+            detail="Insufficient data to generate advice for the selected date.",
         )
 
-    # 3. Generate natural language advice
     generated_text, advice_source = llm_client.generate_advice(
         analysis_result.model_dump(mode="json")
     )
 
-    # 4. Persist generated advice
     crud.upsert_daily_advice(
         db_session,
         user_id,
