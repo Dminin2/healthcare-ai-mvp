@@ -92,7 +92,7 @@ def test_setup_blocked_when_admin_exists(test_client):
     payload = {"email": "newadmin@example.com", "password": "strongpass"}
     response = test_client.post("/auth/setup", json=payload)
     assert response.status_code == 403
-    assert "既に存在します" in response.json()["detail"]
+    assert "An admin user already exists" in response.json()["detail"]
 
 
 @pytest.mark.test_db_url("sqlite:///./test_setup.db")
@@ -143,4 +143,4 @@ def test_setup_second_call_blocked(db_session_for_test_function):
         response = client.post("/auth/setup", json=payload)
 
     assert response.status_code == 403
-    assert "既に存在します" in response.json()["detail"]
+    assert "An admin user already exists" in response.json()["detail"]

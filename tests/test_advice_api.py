@@ -34,7 +34,7 @@ def test_get_advice_with_insufficient_data(test_client):
     """Tests that /advice returns 404 when analysis data is missing."""
     response = test_client.get("/advice/2030-01-01")
     assert response.status_code == 404
-    assert "分析に必要なデータが不足しているため、アドバイスを生成できません。" in response.json()["detail"]
+    assert "Insufficient data to generate advice" in response.json()["detail"]
 
 
 @pytest.mark.test_db_url("sqlite:///./test_advice.db")
