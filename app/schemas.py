@@ -9,7 +9,7 @@ from enum import Enum
 # ---------------------------------------------------------------------------
 
 class UserCreate(BaseModel):
-    email: str
+    email: EmailStr
     password: str
 
 class UserRead(BaseModel):
