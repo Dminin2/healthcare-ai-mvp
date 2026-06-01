@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from . import models
 from .db import engine
 models.Base.metadata.create_all(bind=engine)
-from .routers import ingest, summary, analysis, advice, auth
+from .routers import ingest, summary, analysis, advice, auth, health
 
 def create_app():
     app = FastAPI(
@@ -20,6 +20,7 @@ def create_app():
 
     # Include routers
     app.include_router(auth.router)
+    app.include_router(health.router)
     app.include_router(ingest.router)
     app.include_router(summary.router)
     app.include_router(analysis.router)
