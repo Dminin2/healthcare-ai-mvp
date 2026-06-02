@@ -1,0 +1,34 @@
+services:
+  - type: web
+    name: healthcare-ai
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:create_app --host 0.0.0.0 --port $PORT --factory
+    healthCheckPath: /health
+    envVars:
+      # ---------- Database ----------
+      # Set manually in the Render dashboard.
+      # Use the Supabase connection string with ?sslmode=require
+      # Example: postgresql://postgres.[ref]:[password]@[host]:6543/postgres?sslmode=require
+      - key: DATABASE_URL
+        sync: false
+
+      # ---------- Auth ----------
+      # Render generates a secure random value on first deploy.
+      - key: SECRET_KEY
+        generateValue: true
+
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "30"
+
+      # ---------- LLM ----------
+      # Set to "gemini" to enable Gemini API. Any other value uses the rule-based fallback.
+      - key: LLM_PROVIDER
+        value: none
+
+      # Required only when LLM_PROVIDER=gemini. Set manually in the Render dashboard.
+      - key: GEMINI_API_KEY
+        sync: false
+
+      - key: GEMINI_MODEL
+        value: gemini-1.5-flash
