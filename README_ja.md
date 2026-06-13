@@ -17,6 +17,8 @@
 
 解釈可能性と再現性を重視した設計になっています。
 
+> 実装補助として Gemini CLI を使用しています。システム構成・API設計・データフローの設計は開発者が行いました。
+
 ---
 
 ## 背景・目的
@@ -27,15 +29,6 @@
 
 本プロジェクトでは、天候などの外部要因を明示的に扱い、
 人が理解しやすい形で健康リスクとアドバイスを提示することを目的としています。
-
----
-
-## 開発方針
-
-本プロジェクトでは、Gemini CLI を実装補助ツールとして利用しています。
-
-- システム構成、API設計、データフローは開発者自身が設計
-- Gemini CLI は実装の加速、ボイラープレート生成、デバッグ補助として使用
 
 ---
 
@@ -68,40 +61,218 @@ LLMは「判断」には使用せず、
 APIは FastAPI により実装されており、
 Webサイトや他クライアントからの利用を前提とした構成です。
 
+### ローカル環境
+
+```mermaid
+graph LR
+    Client["Client\n(curl / Swagger UI)"]
+
+    subgraph DC["Docker Compose"]
+        API["FastAPI\n:8000"]
+        DB["PostgreSQL 16\n:5432"]
+    end
+
+    Client -->|HTTP| API
+    API -->|SQL| DB
+    API -.->|GET /health| DB
+```
+
+Docker Compose で `api`（FastAPI、ポート 8000）と `db`（PostgreSQL 16）の2サービスを起動します。
+`db` の `healthcheck` が通過してから `api` が起動します。`/health` でDBへの疎通確認が可能です。
+
+### 本番環境
+
+```mermaid
+graph TD
+    Client["Client"]
+
+    subgraph GH["GitHub · GitHub Actions"]
+        Repo["main branch"]
+        Test["pytest"]
+        DockerBuild["docker build"]
+        Repo -->|push| Test
+        Test --> DockerBuild
+    end
+
+    subgraph RENDER["Render"]
+        API["FastAPI\nPython native"]
+    end
+
+    subgraph SUPA["Supabase"]
+        DB["PostgreSQL"]
+    end
+
+    Weather["Open-Meteo"]
+    LLM["Gemini API"]
+
+    Client -->|HTTPS| API
+    Repo -->|auto-deploy| API
+    API -->|SQL + SSL| DB
+    API -.->|GET /health| DB
+    API -->|weather data| Weather
+    API -->|advice generation| LLM
+```
+
+FastAPI は Render 上で Python native として動作します。Supabase の managed PostgreSQL に `DATABASE_URL` で接続します。
+GitHub Actions が push のたびにテストと Docker ビルドチェックを実行し、`main` への push で Render が自動デプロイします。
+`/health` は Render の `healthCheckPath` として設定されており、デプロイのたびに DB 疎通を確認します。
+
+---
+
+## データベース設計
+
+全10テーブル構成。個人の健康データはすべて `user_id` でユーザーごとに分離されています。
+`weather`（気象データ）はユーザーに紐づかない共通の参照データです。
+
+```mermaid
+erDiagram
+    users {
+        int id PK
+        string email UK
+        string hashed_password
+        boolean is_active
+        boolean is_admin
+        timestamptz created_at
+    }
+
+    weather {
+        int id PK
+        date date UK
+        float temp_max
+        float temp_min
+        float precipitation_sum
+    }
+
+    health_metrics {
+        int id PK
+        int user_id FK
+        date date
+        int steps
+        float sleep_hours
+        int resting_hr
+    }
+
+    daily_state {
+        int id PK
+        int user_id FK
+        date date
+        int mood
+        text symptoms
+        text notes
+    }
+
+    health_metric_raw {
+        int id PK
+        int user_id FK
+        timestamptz received_at
+        text payload_json
+    }
+
+    sleep_sessions {
+        int id PK
+        int user_id FK
+        timestamptz session_start_time
+        timestamptz session_end_time
+        float total_sleep_hours
+        float deep_hours
+        float rem_hours
+    }
+
+    resting_heart_rates {
+        int id PK
+        int user_id FK
+        timestamptz timestamp
+        int value
+    }
+
+    step_counts {
+        int id PK
+        int user_id FK
+        timestamptz timestamp
+        float value
+    }
+
+    indicator_thresholds {
+        int user_id PK
+        string indicator_name PK
+        float caution_threshold
+        float danger_threshold
+        int false_alarm_count
+        int event_at_ok_count
+    }
+
+    daily_advice {
+        int id PK
+        int user_id FK
+        date date
+        string overall_level
+        int total_points
+        text advice_text
+        string source
+    }
+
+    users ||--o{ health_metrics : "user_id"
+    users ||--o{ daily_state : "user_id"
+    users ||--o{ health_metric_raw : "user_id"
+    users ||--o{ sleep_sessions : "user_id"
+    users ||--o{ resting_heart_rates : "user_id"
+    users ||--o{ step_counts : "user_id"
+    users ||--o{ indicator_thresholds : "user_id"
+    users ||--o{ daily_advice : "user_id"
+```
+
+**設計上のポイント：**
+- 個人の健康データを持つテーブルには `user_id` 外部キーを持たせています。CRUD層では `user_id` によるフィルタリングを行い、ユーザーごとのデータ分離を意識した設計にしています。
+- `weather` は地域の環境データであるため、`user_id` を持たない共通参照テーブルとして設計しています。
+- `indicator_thresholds` は `(user_id, indicator_name)` を複合主キーとし、8種類の健康指標の閾値をユーザーごとに管理します。誤検知や見逃しの履歴に基づき、ルールベースで閾値を調整できる設計です。
+- `daily_advice` は `UNIQUE(user_id, date)` により、同一ユーザー・同日のアドバイスを1回だけ生成してキャッシュし、LLM APIの余分な呼び出しを抑制します。
+- `health_metric_raw` はApple Healthからの生データをそのまま保存することで、パースロジックの変更時に再処理できる構造にしています。
+
+各テーブルの詳細な役割・設計意図については [db.md](./db.md) を参照してください。
+
 ---
 
 ## 使用技術（Tech Stack）
 
 ### バックエンド
-- Python 3.11
+- Python 3.13
 - FastAPI
 - SQLAlchemy
-- SQLite
+- JWT 認証（python-jose + passlib）
+
+### データベース
+- PostgreSQL（本番）
+- Supabase（managed PostgreSQL ホスティング）
+- SQLite（テスト用途のみ）
 
 ### AI / 解析
 - Rule-based health risk evaluation
-- Gemini API (LLM-based advice generation)
+- Gemini API（LLMによるアドバイス生成）
 
 ### 外部サービス
-- Open Meteo
+- Open-Meteo
 
 ### インフラ / 開発ツール
 - Docker / Docker Compose
+- GitHub Actions
+- Render
 - pytest
 
 ---
 
-## 対応都市（現状）
+## 技術選定理由
 
-MVPとしての検証を優先するため、
-以下の都市はコード内に静的に定義しています。
+**FastAPI** — Swagger UI の自動生成、Pydantic によるリクエストバリデーション、非同期サポートが目的。ボイラープレートを削減しつつ、APIの仕様を型で明示できます。
 
-- 東京
-- メルボルン
-- シドニー
-- タスマニア
+**SQLAlchemy** — `DATABASE_URL` を切り替えるだけで SQLite（テスト）と PostgreSQL（本番）を同一のORM層で扱えます。スキーマ管理をコードに寄せつつ生SQLを排除するために採用しました。
 
-将来的には、設定ファイルやDBによる動的管理へ移行予定です。
+**PostgreSQL on Supabase** — コネクションプーリングとSSLを備えたマネージドPostgreSQL。インフラを自己管理せず、接続文字列（`DATABASE_URL`）1つで利用できます。
+
+**Render** — シェル展開される `$PORT` を使えるPython nativeデプロイが可能。本番用Dockerfileの管理が不要で、`main` ブランチからの自動デプロイをGitHub連携で実現します。
+
+**GitHub Actions** — CI設定をコードとしてリポジトリで管理します。pushのたびにテストとDockerビルドを検証し、本番への問題混入を防ぎます。
+
+**ルールベース解析** — 健康リスクの評価には学習モデルではなく明示的なスコアリングルールを使用します。判断の根拠が追跡可能で、ラベル付きデータも不要です。
 
 ---
 
@@ -172,34 +343,50 @@ curl http://localhost:8000/summary/last7d \
 
 ## API エンドポイント一覧
 
-### 認証
+### パブリック
 
 | Method | Path | 説明 |
 |---|---|---|
+| GET | `/health` | DB疎通確認 |
 | POST | `/auth/signup` | ユーザー登録 |
 | POST | `/auth/login` | ログイン・JWT 取得 |
-| GET | `/auth/me` | 認証ユーザー情報取得 |
 
-### データ（要認証）
+### 認証済み（要JWT）
 
 | Method | Path | 説明 |
 |---|---|---|
-| POST | `/ingest/weather` | 気象データ取り込み(管理者のみ) |
+| GET | `/auth/me` | 認証ユーザー情報取得 |
+| POST | `/ingest/weather` | 気象データ取り込み（管理者のみ） |
 | POST | `/ingest/health_metrics` | ウェアラブルデータ取り込み |
 | POST | `/ingest/daily_state` | 体調ログ取り込み |
 | GET | `/summary/last7d` | 直近7日間サマリー |
-| GET | `/analysis/{date}` | 日次リスク分析(管理者のみ) |
+| GET | `/analysis/{date}` | 日次リスク分析（管理者のみ） |
 | GET | `/advice/{date}` | 自然言語アドバイス生成 |
 
-詳細なリクエスト・レスポンス仕様は、
-Swagger UI（`/docs`）から確認できます。
+詳細なリクエスト・レスポンス仕様は、Swagger UI（`/docs`）から確認できます。
+
+---
+
+## 環境変数一覧
+
+`.env.example` を `.env` にコピーし、以下の変数を設定してください。
+
+| 変数名 | 必須 | 説明 |
+|---|---|---|
+| `DATABASE_URL` | ✅ | DB接続文字列。Docker Compose使用時は自動設定。 |
+| `SECRET_KEY` | ✅ | JWT署名鍵。`openssl rand -hex 32` で生成。 |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | — | JWTの有効期限（分）。デフォルト: `30`。 |
+| `LLM_PROVIDER` | — | `gemini` でGemini API有効化。デフォルト: `none`（ルールベースフォールバック）。 |
+| `GEMINI_API_KEY` | ✅（LLM使用時） | Gemini APIキー。`LLM_PROVIDER=gemini` の場合のみ必要。 |
+| `GEMINI_MODEL` | — | 使用モデル名。デフォルト: `gemini-1.5-flash`。 |
+
+Supabase接続文字列のパターンなど詳細は `.env.example` を参照してください。
 
 ---
 
 ## Dockerによる起動（推奨）
 
-Dockerを使用することで、
-ローカル環境にPythonをインストールせずにAPIを起動できます。
+Dockerを使用することで、ローカル環境にPythonをインストールせずにAPIを起動できます。
 
 ### 必要なもの
 - Docker
@@ -207,15 +394,24 @@ Dockerを使用することで、
 
 ### セットアップ
 
-`.env` ファイルを作成し、必要な環境変数を設定してください。
+`.env.example` を `.env` にコピーします。
+
+```bash
+cp .env.example .env
+```
+
+Docker Compose が `DATABASE_URL` を自動設定するため、DBの手動設定は不要です。
+LLM機能を使用する場合のみ `GEMINI_API_KEY` を設定してください。
 
 ```
-LLM_PROVIDER=gemini
-GEMINI_API_KEY=your_api_key_here
-GEMINI_MODEL=gemini-2.5-flash
+SECRET_KEY=your-secret-key        # openssl rand -hex 32
+LLM_PROVIDER=none                 # gemini に設定するとGemini API有効
+GEMINI_API_KEY=your_api_key_here  # LLM_PROVIDER=gemini の場合のみ
 ```
 
 ### 起動方法
+
+Docker Compose が FastAPI アプリ（`api`）と PostgreSQL（`db`）を起動します。
 
 ```
 docker compose up --build
@@ -223,25 +419,45 @@ docker compose up --build
 
 起動後、以下にアクセスできます： http://localhost:8000/docs
 
-### Apple Watch + Cloudflare（任意）
+---
 
-Apple Watch と Cloudflare Tunnel を利用することで、
-実際のウェアラブルデータを
-ローカルで動作するサーバーに送信できます。
+## テスト実行方法
 
-この構成は個人利用向けの拡張機能であり、
-本プロジェクトの評価・動作には必須ではありません。
+依存関係をインストールし、テストを実行します。
+
+```bash
+pip install -r requirements.txt
+pytest tests/ -v
+```
+
+テストはインプロセスの SQLite を使用します。PostgreSQL は不要です。
+`main` ブランチおよび `features/**` への push のたびに GitHub Actions で自動実行されます。
+
+---
+
+## Render + Supabase へのデプロイ
+
+FastAPI は Render 上で Python native サービスとして稼働します（本番環境でDockerは使用しません）。
+PostgreSQL は Supabase をホスティングに利用し、`DATABASE_URL` で接続します。
+
+`main` ブランチへの push で Render が自動デプロイします。
+`/health` が `healthCheckPath` として設定されており、デプロイのたびにDB疎通を確認します。
+
+Render ダッシュボードで設定する主な環境変数：
+- `DATABASE_URL` — Supabaseの接続文字列（`?sslmode=require` を含む）
+- `SECRET_KEY` — JWT署名鍵（`render.yaml` で自動生成も可能）
+- `GEMINI_API_KEY` — `LLM_PROVIDER=gemini` の場合のみ必要
+
+詳細は `render.yaml` を参照してください。
 
 ---
 
 ## 今後の改善予定
 
-- 対応都市の動的管理
-- Webサイトの作成
-- 可読性・保守性向上のためのコードレビューおよびリファクタリング
-
-本プロジェクトは、将来的なWebサイト化を見据えた
-バックエンドAPIの設計と検証にフォーカスしています。
+- 対応都市の動的管理（設定ファイルまたはDB）
+- Webインターフェースの作成
+- ユーザーごとの閾値カスタマイズ（設定API）
+- `health_metrics` の時系列テーブルへの統合
 
 ---
 
