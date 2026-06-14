@@ -65,59 +65,49 @@ Webサイトや他クライアントからの利用を前提とした構成で�
 
 ```mermaid
 graph LR
-    Client["Client\n(curl / Swagger UI)"]
+    Client["Client (curl / Swagger UI)"]
 
-    subgraph DC["Docker Compose"]
-        API["FastAPI\n:8000"]
-        DB["PostgreSQL 16\n:5432"]
+    subgraph Compose["Docker Compose"]
+        API["FastAPI :8000"]
+        DB[("PostgreSQL")]
     end
 
     Client -->|HTTP| API
-    API -->|SQL| DB
-    API -.->|GET /health| DB
+    API --> DB
 ```
-
-Docker Compose で `api`（FastAPI、ポート 8000）と `db`（PostgreSQL 16）の2サービスを起動します。
-`db` の `healthcheck` が通過してから `api` が起動します。`/health` でDBへの疎通確認が可能です。
 
 ### 本番環境
 
 ```mermaid
 graph TD
-    Client["Client"]
+    Dev["開発者"]
+    Client["クライアント"]
+    GH["GitHub (main ブランチ)"]
 
-    subgraph GH["GitHub · GitHub Actions"]
-        Repo["main branch"]
+    subgraph CI["GitHub Actions — CI"]
         Test["pytest"]
-        DockerBuild["docker build"]
-        Repo -->|push| Test
-        Test --> DockerBuild
+        Build["docker build check"]
+        Test --> Build
     end
 
-    subgraph RENDER["Render"]
-        API["FastAPI\nPython native"]
+    subgraph RD["Render"]
+        API["FastAPI ( Web Service )"]
     end
 
-    subgraph SUPA["Supabase"]
-        DB["PostgreSQL"]
-    end
+    DB[("Supabase (PostgreSQL)")]
 
-    Weather["Open-Meteo"]
-    LLM["Gemini API"]
-
+    Dev -->|git push| GH
+    GH -->|プッシュで起動| CI
+    GH -->|プッシュで起動| RD
     Client -->|HTTPS| API
-    Repo -->|auto-deploy| API
     API -->|SQL + SSL| DB
-    API -.->|GET /health| DB
-    API -->|weather data| Weather
-    API -->|advice generation| LLM
 ```
 
-FastAPI は Render 上で Python native として動作します。Supabase の managed PostgreSQL に `DATABASE_URL` で接続します。
-GitHub Actions が push のたびにテストと Docker ビルドチェックを実行し、`main` への push で Render が自動デプロイします。
-`/health` は Render の `healthCheckPath` として設定されており、デプロイのたびに DB 疎通を確認します。
+**CI/CD：** GitHub Actions はプッシュのたびに `pytest` → `docker build check` を順番に実行します（CI のみ — デプロイは担当しません）。
+Render Auto Deploy は独立してリポジトリを監視し、main ブランチへのプッシュを直接検知してデプロイします。
 
----
+**実行時アクセス：** クライアントは HTTPS で Render の FastAPI に接続し、
+FastAPI は SSL 接続で Supabase PostgreSQL に問い合わせます。
 
 ## データベース設計
 

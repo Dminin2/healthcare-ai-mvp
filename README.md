@@ -63,59 +63,49 @@ The system is implemented as a RESTful API using FastAPI.
 
 ```mermaid
 graph LR
-    Client["Client\n(curl / Swagger UI)"]
+    Client["Client (curl / Swagger UI)"]
 
-    subgraph DC["Docker Compose"]
-        API["FastAPI\n:8000"]
-        DB["PostgreSQL 16\n:5432"]
+    subgraph Compose["Docker Compose"]
+        API["FastAPI :8000"]
+        DB[("PostgreSQL")]
     end
 
     Client -->|HTTP| API
-    API -->|SQL| DB
-    API -.->|GET /health| DB
+    API --> DB
 ```
-
-Two Docker Compose services: `api` (FastAPI on port 8000) and `db` (PostgreSQL 16).
-The `db` health check gates `api` startup. `/health` confirms DB connectivity at runtime.
 
 ### Production
 
 ```mermaid
 graph TD
+    Dev["Developer"]
     Client["Client"]
+    GH["GitHub (main branch)"]
 
-    subgraph GH["GitHub · GitHub Actions"]
-        Repo["main branch"]
+    subgraph CI["GitHub Actions — CI"]
         Test["pytest"]
-        DockerBuild["docker build"]
-        Repo -->|push| Test
-        Test --> DockerBuild
+        Build["docker build check"]
+        Test --> Build
     end
 
-    subgraph RENDER["Render"]
-        API["FastAPI\nPython native"]
+    subgraph RD["Render"]
+        API["FastAPI ( Web Service )"]
     end
 
-    subgraph SUPA["Supabase"]
-        DB["PostgreSQL"]
-    end
+    DB[("Supabase (PostgreSQL)")]
 
-    Weather["Open-Meteo"]
-    LLM["Gemini API"]
-
+    Dev -->|git push| GH
+    GH -->|on push| CI
+    GH -->|on push| RD
     Client -->|HTTPS| API
-    Repo -->|auto-deploy| API
     API -->|SQL + SSL| DB
-    API -.->|GET /health| DB
-    API -->|weather data| Weather
-    API -->|advice generation| LLM
 ```
 
-FastAPI runs on Render (Python native). Supabase provides managed PostgreSQL connected via `DATABASE_URL`.
-GitHub Actions runs tests and a Docker build check on every push. Render auto-deploys from `main`.
-`/health` is the Render health check endpoint — it verifies DB connectivity on each deploy.
+**CI/CD:** GitHub Actions runs `pytest` then `docker build check` in sequence on every push (CI only — no deployment).
+Render Auto Deploy independently monitors the repository and deploys the main branch directly.
 
----
+**Runtime:** Clients connect to the FastAPI service on Render over HTTPS,
+which queries Supabase PostgreSQL over an SSL connection.
 
 ## Database Schema
 
