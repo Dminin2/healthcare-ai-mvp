@@ -13,3 +13,5 @@ __pycache__/
 .DS_Store
 
 healthcare_ai.db
+
+memo/
