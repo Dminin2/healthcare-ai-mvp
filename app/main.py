@@ -2,6 +2,7 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from . import models
 from .db import engine
 models.Base.metadata.create_all(bind=engine)
@@ -25,6 +26,11 @@ def create_app():
     app.include_router(summary.router)
     app.include_router(analysis.router)
     app.include_router(advice.router)
+
+    # Serve React frontend from /ui (built output must exist at frontend/dist/)
+    _dist = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "frontend", "dist")
+    if os.path.isdir(_dist):
+        app.mount("/ui", StaticFiles(directory=_dist, html=True), name="frontend")
 
     return app
 

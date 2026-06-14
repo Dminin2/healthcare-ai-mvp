@@ -1,0 +1,344 @@
+/* ── Reset ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Yu Gothic UI',
+    'Segoe UI', sans-serif;
+  background: #f0ebe0;
+  color: #2c2c2c;
+  line-height: 1.6;
+  min-height: 100vh;
+}
+
+/* ── Full-page states ── */
+.fullpage-msg {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  gap: 0.5rem;
+  color: #6b6b6b;
+  font-size: 1rem;
+}
+
+.fullpage-msg--error { color: #8b2020; }
+
+.fullpage-sub {
+  font-size: 0.85rem;
+  color: #888;
+  margin-top: 0.5rem;
+}
+
+.fullpage-sub code {
+  background: #e8e0d0;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-family: monospace;
+}
+
+/* ── Header ── */
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.25rem 2rem;
+  border-bottom: 1px solid #d4cabb;
+  background: #f0ebe0;
+}
+
+.app-title {
+  font-size: 1.7rem;
+  font-weight: 700;
+  color: #1e1e1e;
+  letter-spacing: -0.01em;
+}
+
+.btn-github {
+  display: inline-block;
+  padding: 0.35rem 1rem;
+  background: #5c4033;
+  color: #fff;
+  border-radius: 6px;
+  text-decoration: none;
+  font-size: 0.85rem;
+  font-weight: 500;
+  transition: background 0.15s;
+}
+
+.btn-github:hover { background: #4a3028; }
+
+/* ── Layout ── */
+.app-main {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+  max-width: 1080px;
+  margin: 2rem auto;
+  padding: 0 1.5rem 3rem;
+}
+
+@media (max-width: 720px) {
+  .app-main { grid-template-columns: 1fr; }
+}
+
+/* ── Section ── */
+.section {
+  margin-bottom: 2rem;
+}
+
+.section--form {
+  background: #ebe5d8;
+  border-radius: 10px;
+  padding: 1.25rem 1.25rem 1.5rem;
+}
+
+.section-title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+  color: #1e1e1e;
+}
+
+/* ── Risk card ── */
+.risk-card {
+  padding: 1.1rem 1.25rem;
+  border-radius: 8px;
+  color: #fff;
+}
+
+.risk-ok      { background: #2a6041; }
+.risk-caution { background: #b87e0a; }
+.risk-danger  { background: #b83030; }
+
+.risk-label { font-size: 1.35rem; font-weight: 700; }
+.risk-sub   { font-size: 0.875rem; margin-top: 0.2rem; opacity: 0.9; }
+.risk-score { font-size: 0.8rem; margin-top: 0.5rem; opacity: 0.8; }
+
+/* ── Advice card ── */
+.advice-card {
+  background: #ddeaf5;
+  border-radius: 8px;
+  padding: 1rem 1.1rem;
+}
+
+.advice-header {
+  font-weight: 600;
+  font-size: 0.9rem;
+  margin-bottom: 0.5rem;
+  color: #1e3a5a;
+}
+
+.advice-text {
+  font-size: 0.875rem;
+  line-height: 1.75;
+  color: #1e2c3a;
+}
+
+/* ── Timeline ── */
+.timeline {
+  display: flex;
+  flex-direction: column;
+}
+
+.tl-row {
+  display: grid;
+  grid-template-columns: 1fr 20px 1fr;
+  min-height: 80px;
+}
+
+.tl-side { display: flex; }
+.tl-side--left  { justify-content: flex-end; padding-right: 10px; align-items: center; }
+.tl-side--right { justify-content: flex-start; padding-left: 10px; align-items: center; }
+
+.tl-axis {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.tl-line {
+  flex: 1;
+  width: 2px;
+  background: #c8bfb0;
+}
+
+.tl-dot {
+  width: 10px;
+  height: 10px;
+  background: #8b7d6b;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.tl-card {
+  background: #fff;
+  border-radius: 8px;
+  padding: 0.55rem 0.8rem;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.07);
+  width: 100%;
+  max-width: 140px;
+}
+
+.tl-card--left  { text-align: right; }
+.tl-card--right { text-align: left; }
+
+.tl-date    { font-weight: 600; font-size: 0.9rem; }
+.tl-mood    { font-size: 1.2rem; margin-top: 0.15rem; }
+.tl-weather { font-size: 0.72rem; color: #666; margin-top: 0.2rem; }
+.tl-nodata  { font-size: 0.72rem; color: #aaa; margin-top: 0.2rem; }
+
+/* ── Data status ── */
+.status-wrap { display: flex; flex-direction: column; gap: 0.5rem; }
+
+.status-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: #ebe5d8;
+  border-radius: 8px;
+  padding: 0.7rem 0.9rem;
+}
+
+.status-icon  { font-size: 1.2rem; }
+.status-label { font-size: 0.85rem; font-weight: 600; }
+.status-value { font-size: 0.78rem; color: #666; margin-top: 0.1rem; }
+
+/* ── Check-in form ── */
+.checkin-form { display: flex; flex-direction: column; gap: 0; }
+
+.form-field { margin-bottom: 1.1rem; }
+
+.form-label {
+  font-weight: 600;
+  font-size: 0.875rem;
+  margin-bottom: 0.4rem;
+  color: #333;
+}
+
+.form-date { font-size: 0.9rem; color: #555; }
+
+.mood-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.mood-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.45rem 0.7rem;
+  background: #f5f0e8;
+  border: 2px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  text-align: left;
+  transition: background 0.12s, border-color 0.12s;
+  width: 100%;
+}
+
+.mood-btn:hover { background: #e8e0d0; }
+
+.mood-btn--selected {
+  background: #d4c9b8;
+  border-color: #8b7b6a;
+}
+
+.mood-emoji { font-size: 1.2rem; flex-shrink: 0; }
+.mood-label { color: #444; }
+
+.symptoms-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.symptom-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.symptom-item input[type='checkbox'] {
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+  accent-color: #5c4033;
+}
+
+.notes-textarea {
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid #c8bfb0;
+  border-radius: 6px;
+  background: #fff;
+  font-size: 0.85rem;
+  font-family: inherit;
+  resize: vertical;
+  color: #333;
+}
+
+.notes-textarea:focus {
+  outline: none;
+  border-color: #8b7b6a;
+}
+
+.btn-submit {
+  width: 100%;
+  padding: 0.6rem;
+  background: #5c4033;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 0.25rem;
+  transition: background 0.15s;
+}
+
+.btn-submit:hover:not(:disabled) { background: #4a3028; }
+
+.btn-submit:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ── Messages ── */
+.msg {
+  padding: 0.5rem 0.75rem;
+  border-radius: 5px;
+  font-size: 0.83rem;
+  margin-bottom: 0.5rem;
+}
+
+.msg--success { background: #d4edda; color: #155724; }
+.msg--error   { background: #f8d7da; color: #721c24; }
+
+/* ── Data missing placeholder ── */
+.data-missing {
+  background: #f5f0e8;
+  border: 1px dashed #c0b8a8;
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  font-size: 0.85rem;
+  color: #8b7b6a;
+}
+
+/* ── Skeleton loader ── */
+.skeleton {
+  height: 80px;
+  background: #e8e0d0;
+  border-radius: 8px;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.55; }
+}
