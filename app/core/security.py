@@ -5,7 +5,13 @@ from typing import Optional
 import bcrypt
 from jose import JWTError, jwt
 
-SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-key-CHANGE-THIS-IN-PRODUCTION")
+_secret_key = os.getenv("SECRET_KEY")
+if not _secret_key:
+    raise ValueError(
+        "SECRET_KEY environment variable is not set. "
+        "Generate one with: openssl rand -hex 32"
+    )
+SECRET_KEY = _secret_key
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 

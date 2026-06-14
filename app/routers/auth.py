@@ -1,6 +1,8 @@
+import os
 from datetime import datetime, timezone
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
@@ -58,11 +60,22 @@ def login(
 
 @router.post("/setup", response_model=schemas.UserRead, status_code=201,
              summary="Bootstrap the first admin user (one-time setup)")
-def setup_first_admin(user_in: schemas.UserCreate, db: Session = Depends(get_db)):
+def setup_first_admin(
+    user_in: schemas.UserCreate,
+    db: Session = Depends(get_db),
+    x_setup_secret: Optional[str] = Header(default=None),
+):
     """
-    Create the initial admin account. Only succeeds when no admin user exists in the
-    database yet. Returns 403 on any subsequent call.
+    Create the initial admin account. Requires a valid X-Setup-Secret header matching
+    the SETUP_SECRET environment variable. Only succeeds when no admin user exists.
+    Returns 403 if the secret is missing/invalid or an admin already exists.
     """
+    _setup_secret = os.getenv("SETUP_SECRET")
+    if not _setup_secret or x_setup_secret != _setup_secret:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid or missing setup secret.",
+        )
     if db.query(models.User).filter(models.User.is_admin == True).first():
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

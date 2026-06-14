@@ -3,7 +3,10 @@
 
 - 一般ユーザーが /ingest/weather・/analysis/{date} にアクセスすると 403 になること
 - 管理者は同エンドポイントにアクセスできること
+- /auth/setup は SETUP_SECRET なしで 403 になること
+- 不正な JWT sub で 401 になること
 """
+import os
 import pytest
 from datetime import datetime, timezone
 
@@ -89,8 +92,13 @@ def test_analysis_allowed_for_admin(test_client):
 @pytest.mark.test_db_url("sqlite:///./test_admin.db")
 def test_setup_blocked_when_admin_exists(test_client):
     """/auth/setup は admin が既に存在する場合 403 を返すこと。"""
+    setup_secret = os.environ.get("SETUP_SECRET", "test-setup-secret")
     payload = {"email": "newadmin@example.com", "password": "strongpass"}
-    response = test_client.post("/auth/setup", json=payload)
+    response = test_client.post(
+        "/auth/setup",
+        json=payload,
+        headers={"X-Setup-Secret": setup_secret},
+    )
     assert response.status_code == 403
     assert "An admin user already exists" in response.json()["detail"]
 
@@ -102,12 +110,17 @@ def test_setup_creates_admin_when_none_exists(db_session_for_test_function):
     from app.main import create_app
     from app.dependencies import get_db
 
+    setup_secret = os.environ.get("SETUP_SECRET", "test-setup-secret")
     app = create_app()
     app.dependency_overrides[get_db] = lambda: db_session_for_test_function
 
     with TestClient(app) as client:
         payload = {"email": "firstadmin@example.com", "password": "strongpass"}
-        response = client.post("/auth/setup", json=payload)
+        response = client.post(
+            "/auth/setup",
+            json=payload,
+            headers={"X-Setup-Secret": setup_secret},
+        )
 
     assert response.status_code == 201
     data = response.json()
@@ -125,6 +138,8 @@ def test_setup_second_call_blocked(db_session_for_test_function):
     from app import models
     from datetime import datetime, timezone
 
+    setup_secret = os.environ.get("SETUP_SECRET", "test-setup-secret")
+
     # 直接 admin を挿入しておく
     admin = models.User(
         email="existing@example.com",
@@ -140,7 +155,88 @@ def test_setup_second_call_blocked(db_session_for_test_function):
 
     with TestClient(app) as client:
         payload = {"email": "another@example.com", "password": "strongpass"}
-        response = client.post("/auth/setup", json=payload)
+        response = client.post(
+            "/auth/setup",
+            json=payload,
+            headers={"X-Setup-Secret": setup_secret},
+        )
 
     assert response.status_code == 403
     assert "An admin user already exists" in response.json()["detail"]
+
+
+# ---------------------------------------------------------------------------
+# /auth/setup – SETUP_SECRET 保護
+# ---------------------------------------------------------------------------
+
+@pytest.mark.test_db_url("sqlite:///./test_admin.db")
+def test_setup_without_secret_returns_403(db_session_for_test_function):
+    """/auth/setup は X-Setup-Secret ヘッダーなしで 403 を返すこと。"""
+    from fastapi.testclient import TestClient
+    from app.main import create_app
+    from app.dependencies import get_db
+
+    app = create_app()
+    app.dependency_overrides[get_db] = lambda: db_session_for_test_function
+
+    with TestClient(app) as client:
+        payload = {"email": "admin@example.com", "password": "pass"}
+        response = client.post("/auth/setup", json=payload)
+
+    assert response.status_code == 403
+    assert "setup secret" in response.json()["detail"].lower()
+
+
+@pytest.mark.test_db_url("sqlite:///./test_admin.db")
+def test_setup_with_wrong_secret_returns_403(db_session_for_test_function):
+    """/auth/setup は不正な X-Setup-Secret で 403 を返すこと。"""
+    from fastapi.testclient import TestClient
+    from app.main import create_app
+    from app.dependencies import get_db
+
+    app = create_app()
+    app.dependency_overrides[get_db] = lambda: db_session_for_test_function
+
+    with TestClient(app) as client:
+        payload = {"email": "admin@example.com", "password": "pass"}
+        response = client.post(
+            "/auth/setup",
+            json=payload,
+            headers={"X-Setup-Secret": "wrong-secret"},
+        )
+
+    assert response.status_code == 403
+    assert "setup secret" in response.json()["detail"].lower()
+
+
+# ---------------------------------------------------------------------------
+# JWT sub 検証
+# ---------------------------------------------------------------------------
+
+@pytest.mark.test_db_url("sqlite:///./test_admin.db")
+def test_broken_jwt_sub_returns_401(db_session_for_test_function):
+    """不正な JWT sub は 401 Unauthorized を返すこと。"""
+    from fastapi.testclient import TestClient
+    from app.main import create_app
+    from app.dependencies import get_db
+    from app.core.security import create_access_token
+
+    app = create_app()
+    app.dependency_overrides[get_db] = lambda: db_session_for_test_function
+    # get_current_user を上書きしない — JWT検証を実際に行う
+
+    with TestClient(app) as client:
+        # case 1: sub が非数値文字列
+        token = create_access_token(data={"sub": "not-a-number"})
+        res = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+        assert res.status_code == 401
+
+        # case 2: sub キーが存在しない
+        token = create_access_token(data={"user": "1"})
+        res = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+        assert res.status_code == 401
+
+        # case 3: 存在しないユーザーID
+        token = create_access_token(data={"sub": "99999"})
+        res = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+        assert res.status_code == 401

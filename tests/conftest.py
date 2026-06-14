@@ -6,6 +6,11 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, session
 from datetime import datetime, date, timezone, timedelta
 
+# Set required env vars before importing app code.
+# security.py raises ValueError at import time if SECRET_KEY is not set.
+os.environ.setdefault("SECRET_KEY", "test-secret-key-for-testing-only")
+os.environ.setdefault("SETUP_SECRET", "test-setup-secret")
+
 from app.db import Base
 from app.dependencies import get_db, get_current_user
 from app.routers import ingest, summary, analysis, advice

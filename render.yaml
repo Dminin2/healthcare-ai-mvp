@@ -21,6 +21,12 @@ services:
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
         value: "30"
 
+      # One-time secret to protect /auth/setup (initial admin creation).
+      # Render generates a random value; look it up in the dashboard to call /auth/setup.
+      # After the first admin is created, this endpoint will return 403 regardless.
+      - key: SETUP_SECRET
+        generateValue: true
+
       # ---------- LLM ----------
       # Set to "gemini" to enable Gemini API. Any other value uses the rule-based fallback.
       - key: LLM_PROVIDER

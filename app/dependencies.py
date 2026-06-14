@@ -34,7 +34,11 @@ def get_current_user(
     user_id = payload.get("sub")
     if user_id is None:
         raise credentials_exception
-    user = db.query(models.User).filter(models.User.id == int(user_id)).first()
+    try:
+        uid = int(user_id)
+    except (ValueError, TypeError):
+        raise credentials_exception
+    user = db.query(models.User).filter(models.User.id == uid).first()
     if user is None:
         raise credentials_exception
     if not user.is_active:

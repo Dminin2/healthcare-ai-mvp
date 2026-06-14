@@ -183,4 +183,4 @@ class DailyAdvice(Base):
     total_points = Column(Integer, nullable=False)
     advice_text = Column(Text, nullable=False)
     source = Column(String, nullable=False)
-    created_at = Column(DateTime(timezone=True), nullable=False, default=datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
