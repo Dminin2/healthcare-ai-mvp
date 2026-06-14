@@ -22,16 +22,17 @@ def test_summary_last7d_empty_data(test_client):
         assert day["health_metrics"] is None
 
 @pytest.mark.test_db_url("sqlite:///./test_summary.db")
-def test_summary_last7d_with_complete_data(test_client, db_session_for_test_function):
+def test_summary_last7d_with_complete_data(test_client, db_session_for_test_function, test_user):
     """Test /summary/last7d with data for all categories on a specific day."""
     yesterday_utc_date = datetime.now(timezone.utc).date() - timedelta(days=1)
-    
+    uid = test_user.id
+
     db_session_for_test_function.add(models.Weather(date=yesterday_utc_date, temp_max=25.0, temp_min=15.0, precipitation_sum=5.0))
-    db_session_for_test_function.add(models.DailyState(date=yesterday_utc_date, mood=4, symptoms=["headache"], notes="Feeling okay"))
-    db_session_for_test_function.add(models.StepCount(timestamp=datetime.combine(yesterday_utc_date, datetime.min.time(), tzinfo=timezone.utc) + timedelta(hours=8), value=5000))
-    db_session_for_test_function.add(models.StepCount(timestamp=datetime.combine(yesterday_utc_date, datetime.min.time(), tzinfo=timezone.utc) + timedelta(hours=18), value=2500))
-    db_session_for_test_function.add(models.RestingHeartRate(timestamp=datetime.combine(yesterday_utc_date, datetime.min.time(), tzinfo=timezone.utc) + timedelta(hours=6), value=60))
-    db_session_for_test_function.add(models.SleepSession(session_end_time=datetime.combine(yesterday_utc_date, datetime.min.time(), tzinfo=timezone.utc) + timedelta(hours=6), total_sleep_hours=7.5, created_at=datetime.now(timezone.utc), session_start_time=datetime.now(timezone.utc)))
+    db_session_for_test_function.add(models.DailyState(user_id=uid, date=yesterday_utc_date, mood=4, symptoms=["headache"], notes="Feeling okay"))
+    db_session_for_test_function.add(models.StepCount(user_id=uid, timestamp=datetime.combine(yesterday_utc_date, datetime.min.time(), tzinfo=timezone.utc) + timedelta(hours=8), value=5000))
+    db_session_for_test_function.add(models.StepCount(user_id=uid, timestamp=datetime.combine(yesterday_utc_date, datetime.min.time(), tzinfo=timezone.utc) + timedelta(hours=18), value=2500))
+    db_session_for_test_function.add(models.RestingHeartRate(user_id=uid, timestamp=datetime.combine(yesterday_utc_date, datetime.min.time(), tzinfo=timezone.utc) + timedelta(hours=6), value=60))
+    db_session_for_test_function.add(models.SleepSession(user_id=uid, session_end_time=datetime.combine(yesterday_utc_date, datetime.min.time(), tzinfo=timezone.utc) + timedelta(hours=6), total_sleep_hours=7.5, created_at=datetime.now(timezone.utc), session_start_time=datetime.now(timezone.utc)))
     db_session_for_test_function.commit()
 
     response = test_client.get("/summary/last7d")
